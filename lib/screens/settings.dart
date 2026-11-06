@@ -133,7 +133,7 @@ class SettingsScreen extends StatelessWidget {
             flag(LucideIcons.heart, 'Likes', 'likes', 'When someone likes your post'),
             flag(LucideIcons.userPlus, 'New followers', 'follows', 'When someone follows you'),
             _head(p, 'Privacy'),
-            flag(LucideIcons.lock, 'Private account', 'private', 'Only followers see your posts'),
+            flag(LucideIcons.lock, 'Private account', 'private', 'New followers need your approval'),
             flag(LucideIcons.eye, 'Show activity', 'activity', 'Let others see when you are active'),
             _head(p, 'Account'),
             _row(p, LucideIcons.user, 'Edit profile',

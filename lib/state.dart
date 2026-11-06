@@ -48,6 +48,31 @@ class Notif {
       {this.postId, this.commentId});
 }
 
+class Reel {
+  final String id, userId, audioName, caption;
+  final String? video; // local file; null = demo reel drawn as animated art
+  final String? audio; // optional sound track played with the video
+  final double speed, touch; // playback speed, touch-up strength 0..1
+  final int fx, hue, icon, minutes, likes, reposts, saves;
+  int comments, shares;
+  bool liked = false, saved = false, reposted = false;
+  Reel({
+    required this.id, required this.userId, required this.caption, this.video, this.audio,
+    this.audioName = 'Original audio', this.speed = 1, this.touch = 0, this.fx = 0,
+    this.hue = 0, this.icon = 0, this.minutes = 0, this.likes = 0, this.comments = 0,
+    this.reposts = 0, this.shares = 0, this.saves = 0,
+  });
+  int get likeCount => likes + (liked ? 1 : 0);
+  int get repostCount => reposts + (reposted ? 1 : 0);
+  int get saveCount => saves + (saved ? 1 : 0);
+}
+
+class ReelComment {
+  final String reelId, userId, text;
+  final int minutes;
+  const ReelComment(this.reelId, this.userId, this.text, this.minutes);
+}
+
 class Scope extends InheritedNotifier<AppState> {
   const Scope({super.key, required AppState state, required super.child})
       : super(notifier: state);
@@ -66,6 +91,17 @@ class AppState extends ChangeNotifier {
   final Set<String> following = {};
   final Set<String> reported = {};
   final Set<String> likedComments = {};
+  // social graph (seed) + follow requests
+  final Map<String, List<String>> _follows = {}; // user -> users they follow
+  final Map<String, List<String>> _followers = {}; // user -> users following them
+  final List<String> _meFollowers = [];
+  final List<String> incoming = []; // people who newly followed / requested to follow you
+  final Set<String> confirmed = {}, declined = {};
+  // reels
+  final List<Reel> reels = [];
+  final Map<String, List<ReelComment>> reelComments = {};
+  List<dynamic> _myReels = [];
+  List<dynamic> _myReelComments = [];
   final Map<String, bool> flags = {};
   static const _defaults = {
     'push': true, 'likes': true, 'follows': true, 'private': false, 'activity': true,
@@ -76,9 +112,51 @@ class AppState extends ChangeNotifier {
 
   User user(String id) => users[id] ?? me;
   int get unread => notifs.where((n) => !n.read).length;
-  int followersOf(User u) =>
-      u.id == 'me' ? u.followers : u.followers + (following.contains(u.id) ? 1 : 0);
-  int followingOf(User u) => u.id == 'me' ? following.length : u.following;
+  bool get isPrivate => flags['private'] ?? false;
+
+  /// Everyone who follows [id]. For you: confirmed requests count, and when the
+  /// account is public new followers are added automatically.
+  List<String> followersList(String id) {
+    if (id == 'me') {
+      final out = <String>{..._meFollowers, ...confirmed};
+      if (!isPrivate) out.addAll(incoming);
+      out.removeAll(declined);
+      return out.toList();
+    }
+    return [...(_followers[id] ?? const <String>[]), if (following.contains(id)) 'me'];
+  }
+
+  List<String> followingList(String id) {
+    if (id == 'me') return following.toList();
+    return [...(_follows[id] ?? const <String>[]), if (followersList('me').contains(id)) 'me'];
+  }
+
+  /// Pending follow requests (only exist while the account is private).
+  List<String> get requests => !isPrivate
+      ? const []
+      : incoming
+          .where((x) => !confirmed.contains(x) && !declined.contains(x) && !_meFollowers.contains(x))
+          .toList();
+
+  int followersOf(User u) => followersList(u.id).length;
+  int followingOf(User u) => followingList(u.id).length;
+
+  void confirmRequest(String id) {
+    declined.remove(id);
+    confirmed.add(id);
+    _commit();
+  }
+
+  void declineRequest(String id) {
+    confirmed.remove(id);
+    declined.add(id);
+    _commit();
+  }
+
+  void removeFollower(String id) => declineRequest(id);
+
+  String notifText(Notif n) =>
+      n.type == 'follow' && requests.contains(n.userId) ? 'requested to follow you' : n.text;
   List<Post> postsOf(String id) => posts.where((p) => p.userId == id).toList();
   /// Heart count of a comment/reply (stable demo base + your own heart).
   int commentLikes(Comment c) {
@@ -125,6 +203,25 @@ class AppState extends ChangeNotifier {
       notifs.add(Notif(n['type'], n['user'], n['text'], n['minutes'], i++ >= 4,
           postId: n['post'] as String?, commentId: n['comment'] as String?));
     }
+    ((raw['follows'] as Map<String, dynamic>?) ?? const {}).forEach((k, v) {
+      final l = (v as List).cast<String>();
+      _follows[k] = l;
+      for (final t in l) {
+        (_followers[t] ??= []).add(k);
+      }
+    });
+    _meFollowers.addAll(((raw['meFollowers'] as List?) ?? const []).cast<String>());
+    incoming.addAll(((raw['incoming'] as List?) ?? const []).cast<String>());
+    for (final r in (raw['reels'] as List? ?? const [])) {
+      reels.add(Reel(
+        id: r['id'], userId: r['user'], caption: r['caption'], audioName: r['audio'],
+        hue: r['hue'], icon: r['icon'], minutes: r['minutes'], likes: r['likes'],
+        comments: r['comments'], reposts: r['reposts'], shares: r['shares'], saves: r['saves'],
+      ));
+    }
+    for (final c in (raw['reelComments'] as List? ?? const [])) {
+      (reelComments[c['reel']] ??= []).add(ReelComment(c['reel'], c['user'], c['text'], c['minutes']));
+    }
     _p = await SharedPreferences.getInstance();
     final sp = _p!;
     mode.value = sp.getString('theme') ?? 'system';
@@ -133,6 +230,8 @@ class AppState extends ChangeNotifier {
     following.addAll(sp.getStringList('following') ?? const []);
     reported.addAll(sp.getStringList('reported') ?? const []);
     likedComments.addAll(sp.getStringList('cliked') ?? const []);
+    confirmed.addAll(sp.getStringList('confirmed') ?? const []);
+    declined.addAll(sp.getStringList('declined') ?? const []);
     final liked = (sp.getStringList('liked') ?? const []).toSet();
     final saved = (sp.getStringList('saved') ?? const []).toSet();
     _mine = jsonDecode(sp.getString('mine') ?? '[]') as List<dynamic>;
@@ -153,6 +252,38 @@ class AppState extends ChangeNotifier {
       p.liked = liked.contains(p.id);
       p.saved = saved.contains(p.id);
     }
+    // my own reels (recorded in the app) + my reel comments
+    _myReels = jsonDecode(sp.getString('myreels') ?? '[]') as List<dynamic>;
+    final mineReels = <Reel>[];
+    for (final m in _myReels) {
+      final v = m['video'] as String?;
+      if (v == null || !File(v).existsSync()) continue;
+      final a = m['audio'] as String?;
+      mineReels.add(Reel(
+        id: m['id'], userId: 'me', caption: (m['caption'] ?? '') as String, video: v,
+        audio: (a != null && File(a).existsSync()) ? a : null,
+        audioName: (m['audioName'] ?? 'Original audio') as String,
+        speed: ((m['speed'] ?? 1) as num).toDouble(), touch: ((m['touch'] ?? 0) as num).toDouble(),
+        fx: (m['fx'] ?? 0) as int, minutes: ((now - (m['ts'] as int)) / 60000).floor(),
+      ));
+    }
+    reels.insertAll(0, mineReels.reversed);
+    _myReelComments = jsonDecode(sp.getString('myrc') ?? '[]') as List<dynamic>;
+    for (final m in _myReelComments) {
+      final r = reelById(m['reel'] as String);
+      if (r == null) continue;
+      r.comments++;
+      (reelComments[r.id] ??= []).insert(
+          0, ReelComment(r.id, 'me', m['text'] as String, ((now - (m['ts'] as int)) / 60000).floor()));
+    }
+    final rl = (sp.getStringList('rl') ?? const []).toSet();
+    final rs = (sp.getStringList('rs') ?? const []).toSet();
+    final rr = (sp.getStringList('rr') ?? const []).toSet();
+    for (final r in reels) {
+      r.liked = rl.contains(r.id);
+      r.saved = rs.contains(r.id);
+      r.reposted = rr.contains(r.id);
+    }
     _defaults.forEach((k, v) => flags[k] = sp.getBool('f_$k') ?? v);
     posts.sort((a, b) => a.minutes.compareTo(b.minutes));
   }
@@ -166,6 +297,13 @@ class AppState extends ChangeNotifier {
     await sp.setStringList('following', following.toList());
     await sp.setStringList('reported', reported.toList());
     await sp.setStringList('cliked', likedComments.toList());
+    await sp.setStringList('confirmed', confirmed.toList());
+    await sp.setStringList('declined', declined.toList());
+    await sp.setString('myreels', jsonEncode(_myReels));
+    await sp.setString('myrc', jsonEncode(_myReelComments));
+    await sp.setStringList('rl', reels.where((r) => r.liked).map((r) => r.id).toList());
+    await sp.setStringList('rs', reels.where((r) => r.saved).map((r) => r.id).toList());
+    await sp.setStringList('rr', reels.where((r) => r.reposted).map((r) => r.id).toList());
     await sp.setStringList('liked', posts.where((p) => p.liked).map((p) => p.id).toList());
     await sp.setStringList('saved', posts.where((p) => p.saved).map((p) => p.id).toList());
     await sp.setString('mine', jsonEncode(_mine));
@@ -207,6 +345,65 @@ class AppState extends ChangeNotifier {
 
   void reportPost(Post p) {
     reported.add(p.id);
+    _commit();
+  }
+
+  Reel? reelById(String id) {
+    for (final r in reels) {
+      if (r.id == id) return r;
+    }
+    return null;
+  }
+
+  void toggleReelLike(Reel r) {
+    r.liked = !r.liked;
+    _commit();
+  }
+
+  void toggleReelSave(Reel r) {
+    r.saved = !r.saved;
+    _commit();
+  }
+
+  void toggleReelRepost(Reel r) {
+    r.reposted = !r.reposted;
+    _commit();
+  }
+
+  void shareReel(Reel r) {
+    r.shares++;
+    notifyListeners();
+  }
+
+  void addReelComment(Reel r, String text) {
+    final t = text.trim();
+    if (t.isEmpty) return;
+    r.comments++;
+    (reelComments[r.id] ??= []).insert(0, ReelComment(r.id, 'me', t, 0));
+    _myReelComments.add({'reel': r.id, 'text': t, 'ts': DateTime.now().millisecondsSinceEpoch});
+    _commit();
+  }
+
+  void addReel({
+    required String video, String? audio, String audioName = 'Original audio',
+    String caption = '', double speed = 1, int fx = 0, double touch = 0,
+  }) {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final id = 'm$ts';
+    _myReels.add({
+      'id': id, 'video': video, 'audio': audio, 'audioName': audioName, 'caption': caption,
+      'speed': speed, 'fx': fx, 'touch': touch, 'ts': ts,
+    });
+    reels.insert(0, Reel(
+      id: id, userId: 'me', caption: caption, video: video, audio: audio, audioName: audioName,
+      speed: speed, fx: fx, touch: touch,
+    ));
+    _commit();
+  }
+
+  void deleteReel(Reel r) {
+    reels.remove(r);
+    _myReels.removeWhere((m) => m['id'] == r.id);
     _commit();
   }
 
@@ -297,6 +494,19 @@ class AppState extends ChangeNotifier {
     following.clear();
     reported.clear();
     likedComments.clear();
+    confirmed.clear();
+    declined.clear();
+    reels.removeWhere((r) => r.userId == 'me');
+    for (final l in reelComments.values) {
+      l.removeWhere((c) => c.userId == 'me');
+    }
+    for (final r in reels) {
+      r.liked = false;
+      r.saved = false;
+      r.reposted = false;
+    }
+    _myReels = [];
+    _myReelComments = [];
     _mine = [];
     posts.removeWhere((p) => p.userId == 'me');
     for (final p in posts) {

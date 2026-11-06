@@ -13,6 +13,8 @@ dependencies:
   photo_manager: ^3.6.0
   video_player: ^2.9.2
   emoji_picker_flutter: ^4.0.0
+  camera: ^0.11.0
+  audioplayers: ^6.1.0
   path_provider: ^2.1.4
   ffi: ^2.1.0
   shared_preferences: ^2.2.3

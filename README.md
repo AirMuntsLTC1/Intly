@@ -5,7 +5,8 @@ Simple, fast social app. **Flutter** (UI, Lucide icons) + **C++** (native core v
 ## Screens
 Home (stories + feed, animated like and save) · Explore (search, trending, who to follow) · Compose (custom media picker) ·
 Notifications (tap opens the post and highlights the comment; tap the avatar opens the profile) ·
-Profile (own + others) · Edit profile · Post detail + comments · Report post · Settings
+Reels (feed, record with camera, effects, sound) · Followers / Following / Flagged requests ·
+Profile (own + others) · Edit profile · Post detail + comments · Report post · Settings (private account)
 
 ## Build with GitHub (Termux)
 ```bash

@@ -4,6 +4,7 @@ import '../native.dart';
 import '../state.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'follow_list.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -95,6 +96,22 @@ class _ExploreState extends State<ExploreScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(u.name, style: ts(p.text, 15, FontWeight.w700)),
                   Text('@${u.handle}', style: ts(p.sub, 13)),
+                  Row(children: [
+                    Tap(
+                      onTap: () => openFollowList(context, u.id, 0),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4, right: 12),
+                        child: Text('${compact(s.followersOf(u))} followers', style: ts(p.sub, 12, FontWeight.w600)),
+                      ),
+                    ),
+                    Tap(
+                      onTap: () => openFollowList(context, u.id, 1),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('${compact(s.followingOf(u))} following', style: ts(p.sub, 12, FontWeight.w600)),
+                      ),
+                    ),
+                  ]),
                 ]),
               ),
               if (u.id != 'me') FollowBtn(u.id, small: true),

@@ -88,7 +88,7 @@ class _Row extends StatelessWidget {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text.rich(TextSpan(children: [
                   TextSpan(text: u.name, style: ts(p.text, 15, FontWeight.w700)),
-                  TextSpan(text: ' ${n.text}', style: ts(p.text, 15)),
+                  TextSpan(text: ' ${s.notifText(n)}', style: ts(p.text, 15)),
                 ])),
                 const SizedBox(height: 2),
                 Text(timeAgo(n.minutes), style: ts(p.sub, 12)),

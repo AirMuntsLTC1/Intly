@@ -4,6 +4,7 @@ import '../state.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'edit_profile.dart';
+import 'follow_list.dart';
 import 'settings.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -17,13 +18,16 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileState extends State<ProfileScreen> {
   int _tab = 0;
 
-  Widget _stat(Pal p, String n, String l) => Padding(
-        padding: const EdgeInsets.only(right: 22),
-        child: Row(children: [
-          Text(n, style: ts(p.text, 16, FontWeight.w800)),
-          const SizedBox(width: 5),
-          Text(l, style: ts(p.sub, 14)),
-        ]),
+  Widget _stat(Pal p, String n, String l, [VoidCallback? onTap]) => Tap(
+        onTap: onTap ?? () {},
+        child: Padding(
+          padding: const EdgeInsets.only(right: 22, top: 4, bottom: 4),
+          child: Row(children: [
+            Text(n, style: ts(p.text, 16, FontWeight.w800)),
+            const SizedBox(width: 5),
+            Text(l, style: ts(p.sub, 14)),
+          ]),
+        ),
       );
 
   @override
@@ -99,7 +103,13 @@ class _ProfileState extends State<ProfileScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(u.name, style: ts(p.text, 22, FontWeight.w800)),
+                  Row(children: [
+                    Flexible(child: Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(p.text, 22, FontWeight.w800))),
+                    if (me && s.isPrivate) ...[
+                      const SizedBox(width: 8),
+                      Icon(LucideIcons.lock, size: 18, color: p.sub),
+                    ],
+                  ]),
                   Text('@${u.handle}', style: ts(p.sub, 14)),
                   if (u.bio.isNotEmpty) ...[
                     const SizedBox(height: 10),
@@ -114,8 +124,8 @@ class _ProfileState extends State<ProfileScreen> {
                   const SizedBox(height: 12),
                   Row(children: [
                     _stat(p, '${mine.length}', 'Posts'),
-                    _stat(p, compact(s.followersOf(u)), 'Followers'),
-                    _stat(p, compact(s.followingOf(u)), 'Following'),
+                    _stat(p, compact(s.followersOf(u)), 'Followers', () => openFollowList(context, u.id, 0)),
+                    _stat(p, compact(s.followingOf(u)), 'Following', () => openFollowList(context, u.id, 1)),
                   ]),
                 ]),
               ),

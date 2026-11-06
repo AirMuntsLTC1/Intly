@@ -87,8 +87,43 @@ for i in range(18):
             n["comment"] = f"c{cid}"
     notifs.append(n)
 
+# ---- social graph, follow requests and reels (own random stream: older data stays identical)
+rng = random.Random(77)
+ids = [u["id"] for u in users]
+follows = {u: rng.sample([x for x in ids if x != u], rng.randint(3, 9)) for u in ids}
+me_followers = rng.sample(ids, 5)                       # already follow you
+incoming = rng.sample([x for x in ids if x not in me_followers], 4)  # new followers / requests
+k = 0
+for n in notifs:
+    if n["type"] == "follow":
+        n["user"] = incoming[k % len(incoming)]
+        k += 1
+
+REEL_CAPS = [
+    "Golden hour never misses", "POV: Monday morning", "Tiny desk, big ideas",
+    "Wait for the end", "Sunday reset routine", "This sound lives in my head",
+    "Night drive thoughts", "Coffee, code, repeat", "A day in my life",
+    "Trying something new", "Quick tip you needed today", "Behind the scenes",
+]
+REEL_AUDIO = ["Original audio", "Golden Hour - Instrumental", "Night Drive", "Lo-fi Study Beats",
+              "Summer Loop", "Soft Focus", "City Lights", "Daydream"]
+reels, reel_comments = [], []
+for i in range(12):
+    r = {"id": f"r{i+1}", "user": rng.choice(ids), "caption": REEL_CAPS[i],
+         "audio": rng.choice(REEL_AUDIO), "hue": rng.randint(0, 359), "icon": rng.randint(0, 9),
+         "likes": rng.randint(800, 340000), "comments": 0, "reposts": rng.randint(20, 14000),
+         "shares": rng.randint(30, 35000), "saves": rng.randint(40, 17000),
+         "minutes": rng.choice([30, 90, 240, 600, 1500, 3000])}
+    for _ in range(rng.randint(3, 6)):
+        reel_comments.append({"reel": r["id"], "user": rng.choice(ids), "text": rng.choice(COMMENTS),
+                              "minutes": rng.randint(2, r["minutes"])})
+        r["comments"] += 1
+    reels.append(r)
+
 os.makedirs("assets", exist_ok=True)
 with open("assets/seed.json", "w", encoding="utf-8") as f:
-    json.dump({"users": users, "posts": posts, "comments": comments, "notifs": notifs},
+    json.dump({"users": users, "posts": posts, "comments": comments, "notifs": notifs,
+               "follows": follows, "meFollowers": me_followers, "incoming": incoming,
+               "reels": reels, "reelComments": reel_comments},
               f, ensure_ascii=False, separators=(",", ":"))
-print(f"seed.json: {len(users)} users, {len(posts)} posts, {len(comments)} comments, {len(notifs)} notifs")
+print(f"seed.json: {len(users)} users, {len(posts)} posts, {len(comments)} comments, {len(notifs)} notifs, {len(reels)} reels")

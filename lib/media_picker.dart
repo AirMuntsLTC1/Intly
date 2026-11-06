@@ -16,14 +16,20 @@ class PickedMedia {
 }
 
 /// Opens the custom media picker. Returns the saved media, or null.
-Future<PickedMedia?> pickMedia(BuildContext c) =>
-    Navigator.of(c).push<PickedMedia>(slide<PickedMedia>(const MediaPickerScreen()));
+Future<PickedMedia?> pickMedia(BuildContext c, {MediaLibrary? lib}) => Navigator.of(c)
+    .push<PickedMedia>(slide<PickedMedia>(MediaPickerScreen(lib: lib ?? MediaLibrary.I)));
 
 /// Session-wide gallery cache: albums, pages of assets and thumbnails are kept in
 /// memory, so re-opening the picker or scrolling back never reloads anything.
 class MediaLibrary extends ChangeNotifier {
-  MediaLibrary._();
-  static final MediaLibrary I = MediaLibrary._();
+  MediaLibrary._(this.type);
+  /// photos + videos (post composer)
+  static final MediaLibrary I = MediaLibrary._(RequestType.common);
+  /// videos only (reels)
+  static final MediaLibrary V = MediaLibrary._(RequestType.video);
+  /// audio files on the device (reel sounds)
+  static final MediaLibrary A = MediaLibrary._(RequestType.audio);
+  final RequestType type;
 
   static const _pageSize = 90;
   static const _maxThumbs = 700;
@@ -43,7 +49,7 @@ class MediaLibrary extends ChangeNotifier {
   Future<bool> requestAccess() async {
     final st = await PhotoManager.requestPermissionExtend(
       requestOption: const PermissionRequestOption(
-        androidPermission: AndroidPermission(type: RequestType.common, mediaLocation: false),
+        androidPermission: AndroidPermission(type: type, mediaLocation: false),
       ),
     );
     granted = st.hasAccess;
@@ -61,7 +67,7 @@ class MediaLibrary extends ChangeNotifier {
     if (ready && !_dirty) return;
     final gen = ++_gen;
     final list = await PhotoManager.getAssetPathList(
-      type: RequestType.common,
+      type: type,
       onlyAll: false,
       filterOption: FilterOptionGroup(
         orders: [OrderOption(type: OrderOptionType.createDate, asc: false)],
@@ -181,13 +187,14 @@ class MediaLibrary extends ChangeNotifier {
 }
 
 class MediaPickerScreen extends StatefulWidget {
-  const MediaPickerScreen({super.key});
+  final MediaLibrary lib;
+  const MediaPickerScreen({super.key, required this.lib});
   @override
   State<MediaPickerScreen> createState() => _MediaPickerState();
 }
 
 class _MediaPickerState extends State<MediaPickerScreen> {
-  final lib = MediaLibrary.I;
+  MediaLibrary get lib => widget.lib;
   final _scroll = ScrollController();
   bool _albums = false;
   String? _busy;
@@ -294,7 +301,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
       itemCount: lib.assets.length,
       itemBuilder: (c, i) {
         final a = lib.assets[i];
-        return _Thumb(key: ValueKey(a.id), asset: a, onTap: () => _choose(a));
+        return _Thumb(key: ValueKey(a.id), lib: lib, asset: a, onTap: () => _choose(a));
       },
     );
   }
@@ -342,7 +349,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
       body: ListenableBuilder(
         listenable: lib,
         builder: (context, _) => Column(children: [
-          TopBar('Select media', back: true, actions: [if (lib.granted) _pill(p)]),
+          TopBar(lib.type == RequestType.video ? 'Select video' : 'Select media', back: true, actions: [if (lib.granted) _pill(p)]),
           Expanded(
             child: Stack(children: [
               Positioned.fill(child: _grid(p)),
@@ -363,9 +370,10 @@ class _MediaPickerState extends State<MediaPickerScreen> {
 }
 
 class _Thumb extends StatefulWidget {
+  final MediaLibrary lib;
   final AssetEntity asset;
   final VoidCallback onTap;
-  const _Thumb({super.key, required this.asset, required this.onTap});
+  const _Thumb({super.key, required this.lib, required this.asset, required this.onTap});
   @override
   State<_Thumb> createState() => _ThumbState();
 }
@@ -376,7 +384,7 @@ class _ThumbState extends State<_Thumb> {
   @override
   void initState() {
     super.initState();
-    final lib = MediaLibrary.I;
+    final lib = widget.lib;
     _bytes = lib.cached(widget.asset);
     if (_bytes == null) {
       lib.thumb(widget.asset).then((b) {

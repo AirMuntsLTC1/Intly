@@ -7,6 +7,8 @@ import 'explore.dart';
 import 'home.dart';
 import 'notifications.dart';
 import 'profile.dart';
+import 'reels.dart';
+import '../reel_fx.dart';
 
 class Shell extends StatelessWidget {
   const Shell({super.key});
@@ -23,6 +25,7 @@ class Shell extends StatelessWidget {
           SizedBox.shrink(),
           NotificationsScreen(),
           ProfileScreen(userId: 'me', isTab: true),
+          ReelsScreen(),
         ],
       ),
       bottomNavigationBar: const _NavBar(),
@@ -86,6 +89,7 @@ class _NavBar extends StatelessWidget {
                 ),
               ),
             ),
+            _item(context, LucideIcons.clapperboard, reelsTab),
             _item(context, LucideIcons.bell, 3, badge: s.unread),
             _item(context, LucideIcons.user, 4),
           ]),
