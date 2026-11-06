@@ -48,7 +48,7 @@ class MediaLibrary extends ChangeNotifier {
   /// Shows the system permission dialog when access has not been granted yet.
   Future<bool> requestAccess() async {
     final st = await PhotoManager.requestPermissionExtend(
-      requestOption: const PermissionRequestOption(
+      requestOption: PermissionRequestOption(
         androidPermission: AndroidPermission(type: type, mediaLocation: false),
       ),
     );

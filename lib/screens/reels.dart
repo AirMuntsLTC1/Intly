@@ -130,7 +130,6 @@ class _ReelsState extends State<ReelsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.p;
     final s = context.s;
     final visible = s.tab == reelsTab && (ModalRoute.of(context)?.isCurrent ?? true);
     final feed = _feed(s);
