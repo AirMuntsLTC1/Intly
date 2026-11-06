@@ -1,0 +1,19 @@
+name: intly
+description: Intly - a simple, fast social app (Flutter + C++ + Python).
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  lucide_icons: ^0.257.0
+  ffi: ^2.1.0
+  shared_preferences: ^2.2.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/seed.json
