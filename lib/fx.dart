@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'styles.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -138,16 +139,19 @@ class PostCanvas extends StatelessWidget {
   final double height;
   final Widget? center;
   final bool editable;
+  final bool video; // shows a play badge over the poster
   final VoidCallback? onChanged;
+  final VoidCallback? onTap;
   const PostCanvas({
     super.key, required this.bg, required this.image, required this.stickers,
-    required this.height, this.center, this.editable = false, this.onChanged,
+    required this.height, this.center, this.editable = false, this.video = false,
+    this.onChanged, this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final p = context.p;
-    return Container(
+    final box = Container(
       height: height,
       width: double.infinity,
       clipBehavior: Clip.antiAlias,
@@ -167,9 +171,18 @@ class PostCanvas extends StatelessWidget {
                 errorBuilder: (_, __, ___) => const SizedBox.shrink()),
           if (center != null) Center(child: Padding(padding: const EdgeInsets.all(22), child: center)),
           for (final st in stickers) _sticker(st, w, h),
+          if (video)
+            Center(
+              child: Container(
+                width: 56, height: 56,
+                decoration: const BoxDecoration(color: Color(0x99000000), shape: BoxShape.circle),
+                child: const Icon(LucideIcons.play, size: 28, color: Colors.white),
+              ),
+            ),
         ]);
       }),
     );
+    return onTap == null ? box : GestureDetector(onTap: onTap, child: box);
   }
 
   Widget _sticker(Sticker st, double w, double h) {

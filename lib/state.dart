@@ -21,7 +21,8 @@ class Post {
   int commentCount;
   bool liked = false, saved = false;
   int bg = -1, font = 0, tcolor = -1;
-  String? image;
+  String? image; // photo, or the poster frame when [video] is set
+  String? video; // local video file
   List<Sticker> stickers = [];
   Post(this.id, this.userId, this.text, this.minutes, this.media, this.likes,
       this.commentCount, this.shares);
@@ -64,6 +65,7 @@ class AppState extends ChangeNotifier {
   final List<Notif> notifs = [];
   final Set<String> following = {};
   final Set<String> reported = {};
+  final Set<String> likedComments = {};
   final Map<String, bool> flags = {};
   static const _defaults = {
     'push': true, 'likes': true, 'follows': true, 'private': false, 'activity': true,
@@ -78,6 +80,22 @@ class AppState extends ChangeNotifier {
       u.id == 'me' ? u.followers : u.followers + (following.contains(u.id) ? 1 : 0);
   int followingOf(User u) => u.id == 'me' ? following.length : u.following;
   List<Post> postsOf(String id) => posts.where((p) => p.userId == id).toList();
+  /// Heart count of a comment/reply (stable demo base + your own heart).
+  int commentLikes(Comment c) {
+    final mine = likedComments.contains(c.id) ? 1 : 0;
+    if (c.id.startsWith('n')) return mine; // comments written in the app start at 0
+    var h = 7;
+    for (final u in c.id.codeUnits) {
+      h = (h * 31 + u) & 0x7fffffff;
+    }
+    return h % 41 + mine;
+  }
+
+  void toggleCommentLike(Comment c) {
+    if (!likedComments.remove(c.id)) likedComments.add(c.id);
+    _commit();
+  }
+
   Post? postById(String? id) {
     if (id == null) return null;
     for (final p in posts) {
@@ -114,6 +132,7 @@ class AppState extends ChangeNotifier {
     me.bio = sp.getString('bio') ?? me.bio;
     following.addAll(sp.getStringList('following') ?? const []);
     reported.addAll(sp.getStringList('reported') ?? const []);
+    likedComments.addAll(sp.getStringList('cliked') ?? const []);
     final liked = (sp.getStringList('liked') ?? const []).toSet();
     final saved = (sp.getStringList('saved') ?? const []).toSet();
     _mine = jsonDecode(sp.getString('mine') ?? '[]') as List<dynamic>;
@@ -125,6 +144,8 @@ class AppState extends ChangeNotifier {
       p.tcolor = (m['tc'] ?? -1) as int;
       final img = m['img'] as String?;
       p.image = (img != null && File(img).existsSync()) ? img : null;
+      final vid = m['vid'] as String?;
+      p.video = (vid != null && File(vid).existsSync()) ? vid : null;
       p.stickers = ((m['st'] ?? []) as List).map((e) => Sticker.fromJson(e as List)).toList();
       posts.add(p);
     }
@@ -144,6 +165,7 @@ class AppState extends ChangeNotifier {
     await sp.setString('bio', me.bio);
     await sp.setStringList('following', following.toList());
     await sp.setStringList('reported', reported.toList());
+    await sp.setStringList('cliked', likedComments.toList());
     await sp.setStringList('liked', posts.where((p) => p.liked).map((p) => p.id).toList());
     await sp.setStringList('saved', posts.where((p) => p.saved).map((p) => p.id).toList());
     await sp.setString('mine', jsonEncode(_mine));
@@ -201,6 +223,7 @@ class AppState extends ChangeNotifier {
     required int font,
     required int tcolor,
     String? image,
+    String? video,
     required List<Sticker> stickers,
   }) {
     final Post post;
@@ -218,10 +241,11 @@ class AppState extends ChangeNotifier {
     post.font = font;
     post.tcolor = tcolor;
     post.image = image;
+    post.video = video;
     post.stickers = stickers;
     final map = {
       'id': post.id, 'text': text, 'ts': ts, 'bg': bg, 'font': font, 'tc': tcolor,
-      'img': image, 'st': stickers.map((e) => e.toJson()).toList(),
+      'img': image, 'vid': video, 'st': stickers.map((e) => e.toJson()).toList(),
     };
     final idx = _mine.indexWhere((m) => m['id'] == post.id);
     if (idx >= 0) {
@@ -272,6 +296,7 @@ class AppState extends ChangeNotifier {
     await _p?.clear();
     following.clear();
     reported.clear();
+    likedComments.clear();
     _mine = [];
     posts.removeWhere((p) => p.userId == 'me');
     for (final p in posts) {

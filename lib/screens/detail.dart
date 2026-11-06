@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../fx.dart';
 import '../state.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -221,6 +222,15 @@ class _Tile extends StatelessWidget {
               ),
             ),
           ]),
+        ),
+        ReactButton(
+          shape: Shape.heart,
+          icon: LucideIcons.heart,
+          active: s.likedComments.contains(c.id),
+          color: p.danger,
+          idle: p.sub,
+          count: s.commentLikes(c) > 0 ? s.commentLikes(c) : null,
+          onTap: () => s.toggleCommentLike(c),
         ),
       ]),
     );

@@ -8,9 +8,16 @@ import 'package:photo_manager/photo_manager.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-/// Opens the custom media picker. Returns the saved image path, or null.
-Future<String?> pickMedia(BuildContext c) =>
-    Navigator.of(c).push<String>(slide<String>(const MediaPickerScreen()));
+/// What the picker hands back: a photo, or a video plus its poster frame.
+class PickedMedia {
+  final String image; // photo path, or poster of the video
+  final String? video; // video path (null for photos)
+  const PickedMedia(this.image, [this.video]);
+}
+
+/// Opens the custom media picker. Returns the saved media, or null.
+Future<PickedMedia?> pickMedia(BuildContext c) =>
+    Navigator.of(c).push<PickedMedia>(slide<PickedMedia>(const MediaPickerScreen()));
 
 /// Session-wide gallery cache: albums, pages of assets and thumbnails are kept in
 /// memory, so re-opening the picker or scrolling back never reloads anything.
@@ -36,7 +43,7 @@ class MediaLibrary extends ChangeNotifier {
   Future<bool> requestAccess() async {
     final st = await PhotoManager.requestPermissionExtend(
       requestOption: const PermissionRequestOption(
-        androidPermission: AndroidPermission(type: RequestType.image, mediaLocation: false),
+        androidPermission: AndroidPermission(type: RequestType.common, mediaLocation: false),
       ),
     );
     granted = st.hasAccess;
@@ -54,7 +61,7 @@ class MediaLibrary extends ChangeNotifier {
     if (ready && !_dirty) return;
     final gen = ++_gen;
     final list = await PhotoManager.getAssetPathList(
-      type: RequestType.image,
+      type: RequestType.common,
       onlyAll: false,
       filterOption: FilterOptionGroup(
         orders: [OrderOption(type: OrderOptionType.createDate, asc: false)],
@@ -132,8 +139,26 @@ class MediaLibrary extends ChangeNotifier {
     }
   }
 
-  /// Saves the chosen photo (max 1600px, JPEG 85) into the app's media folder.
-  Future<String?> export(AssetEntity a) async {
+  /// Saves the chosen photo (max 1600px, JPEG 85) or video (+ poster frame) into the
+  /// app's media folder. Throws a String message when it cannot be used.
+  Future<PickedMedia> export(AssetEntity a) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final d = Directory('${dir.path}/media');
+    if (!d.existsSync()) d.createSync(recursive: true);
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    if (a.type == AssetType.video) {
+      final src = await a.originFile;
+      if (src == null) throw 'Could not open this video';
+      if (await src.length() > 150 * 1024 * 1024) throw 'This video is too large (max 150 MB)';
+      final poster = await a.thumbnailDataWithSize(const ThumbnailSize(1280, 1280), quality: 85);
+      if (poster == null) throw 'Could not open this video';
+      var ext = src.path.contains('.') ? src.path.split('.').last.toLowerCase() : 'mp4';
+      if (ext.isEmpty || ext.length > 5) ext = 'mp4';
+      final v = await src.copy('${d.path}/$ts.$ext');
+      final img = File('${d.path}/$ts.jpg');
+      await img.writeAsBytes(poster, flush: true);
+      return PickedMedia(img.path, v.path);
+    }
     try {
       final w = a.orientatedWidth, h = a.orientatedHeight;
       final big = w > h ? w : h;
@@ -145,15 +170,12 @@ class MediaLibrary extends ChangeNotifier {
         size = ThumbnailSize((w * k).round().clamp(1, 1600).toInt(), (h * k).round().clamp(1, 1600).toInt());
       }
       final bytes = await a.thumbnailDataWithSize(size, quality: 85);
-      if (bytes == null) return null;
-      final dir = await getApplicationDocumentsDirectory();
-      final d = Directory('${dir.path}/media');
-      if (!d.existsSync()) d.createSync(recursive: true);
-      final f = File('${d.path}/${DateTime.now().millisecondsSinceEpoch}.jpg');
+      if (bytes == null) throw 'Could not open this photo';
+      final f = File('${d.path}/$ts.jpg');
       await f.writeAsBytes(bytes, flush: true);
-      return f.path;
-    } catch (_) {
-      return null;
+      return PickedMedia(f.path);
+    } catch (e) {
+      throw e is String ? e : 'Could not open this photo';
     }
   }
 }
@@ -196,14 +218,20 @@ class _MediaPickerState extends State<MediaPickerScreen> {
   Future<void> _choose(AssetEntity a) async {
     if (_busy != null) return;
     setState(() => _busy = a.id);
-    final path = await lib.export(a);
+    PickedMedia? m;
+    String err = 'Could not open this file';
+    try {
+      m = await lib.export(a);
+    } catch (e) {
+      if (e is String) err = e;
+    }
     if (!mounted) return;
-    if (path == null) {
+    if (m == null) {
       setState(() => _busy = null);
-      toast(context, 'Could not open this photo');
+      toast(context, err);
       return;
     }
-    Navigator.of(context).pop(path);
+    Navigator.of(context).pop(m);
   }
 
   Widget _pill(Pal p) => Tap(
@@ -233,7 +261,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(LucideIcons.image, size: 40, color: p.sub),
             const SizedBox(height: 12),
-            Text('Allow access to your photos to add media to your post.',
+            Text('Allow access to your photos and videos to add media to your post.',
                 textAlign: TextAlign.center, style: ts(p.sub, 15, FontWeight.w500, 1.4)),
             const SizedBox(height: 18),
             GradBtn('Allow access', _allow),
@@ -255,7 +283,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
       return Center(child: CircularProgressIndicator(strokeWidth: 3, color: p.accent));
     }
     if (lib.assets.isEmpty && !lib.loading && !lib.hasMore) {
-      return const Align(alignment: Alignment.topCenter, child: Empty(LucideIcons.image, 'No photos found'));
+      return const Align(alignment: Alignment.topCenter, child: Empty(LucideIcons.image, 'No photos or videos found'));
     }
     return GridView.builder(
       controller: _scroll,
@@ -314,7 +342,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
       body: ListenableBuilder(
         listenable: lib,
         builder: (context, _) => Column(children: [
-          TopBar('Select photo', back: true, actions: [if (lib.granted) _pill(p)]),
+          TopBar('Select media', back: true, actions: [if (lib.granted) _pill(p)]),
           Expanded(
             child: Stack(children: [
               Positioned.fill(child: _grid(p)),
@@ -362,9 +390,9 @@ class _ThumbState extends State<_Thumb> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.onTap,
-          child: Container(
-            color: context.p.card,
-            child: AnimatedOpacity(
+          child: Stack(fit: StackFit.expand, children: [
+            Container(color: context.p.card),
+            AnimatedOpacity(
               opacity: _bytes == null ? 0 : 1,
               duration: const Duration(milliseconds: 160),
               child: _bytes == null
@@ -372,7 +400,23 @@ class _ThumbState extends State<_Thumb> {
                   : Image.memory(_bytes!,
                       fit: BoxFit.cover, gaplessPlayback: true, filterQuality: FilterQuality.low),
             ),
-          ),
+            if (widget.asset.type == AssetType.video)
+              Positioned(
+                right: 5, bottom: 5,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: const Color(0x99000000), borderRadius: BorderRadius.circular(8)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(LucideIcons.play, size: 10, color: Colors.white),
+                    const SizedBox(width: 3),
+                    Text(_dur(widget.asset.videoDuration), style: ts(Colors.white, 11, FontWeight.w700)),
+                  ]),
+                ),
+              ),
+          ]),
         ),
       );
+
+  String _dur(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
 }

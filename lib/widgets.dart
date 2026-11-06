@@ -8,6 +8,7 @@ import 'screens/detail.dart';
 import 'screens/hashtag.dart';
 import 'styles.dart';
 import 'screens/profile.dart';
+import 'screens/viewer.dart';
 import 'state.dart';
 import 'theme.dart';
 
@@ -23,7 +24,8 @@ String timeAgo(int m) {
 
 String compact(int n) => n >= 1000 ? '${(n / 1000).toStringAsFixed(n >= 10000 ? 0 : 1)}k' : '$n';
 
-Route<T> slide<T>(Widget page) => PageRouteBuilder<T>(
+Route<T> slide<T>(Widget page, {String? name}) => PageRouteBuilder<T>(
+      settings: RouteSettings(name: name),
       opaque: true,
       transitionDuration: const Duration(milliseconds: 220),
       reverseTransitionDuration: const Duration(milliseconds: 180),
@@ -40,14 +42,48 @@ Route<T> slide<T>(Widget page) => PageRouteBuilder<T>(
       },
     );
 
+/// Name of the screen currently on top of the navigator.
+String? _topRoute(BuildContext c) {
+  String? name;
+  Navigator.of(c).popUntil((r) {
+    name = r.settings.name;
+    return true; // never pops anything, only reads the top route
+  });
+  return name;
+}
+
+/// Opens a screen unless that exact screen is already on top, so tapping the same
+/// hashtag / profile / post again (or many times fast) never stacks copies of it.
+void pushOnce(BuildContext c, String name, Widget page) {
+  if (_topRoute(c) == name) return;
+  Navigator.of(c).push(slide(page, name: name));
+}
+
+void openPost(BuildContext c, Post post, {String? highlightId}) =>
+    pushOnce(c, 'post:${post.id}', PostDetail(post, highlightId: highlightId));
+
 void openProfile(BuildContext c, String id) {
   if (id == 'me') {
     c.s.setTab(4);
     Navigator.of(c).popUntil((r) => r.isFirst);
   } else {
-    Navigator.of(c).push(slide(ProfileScreen(userId: id)));
+    pushOnce(c, 'profile:$id', ProfileScreen(userId: id));
   }
 }
+
+/// Full-size gradient art used for demo posts that have no real media file.
+Widget mediaPlaceholder(int media, {double iconSize = 60}) => Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [hsl(media * 37 + 10), hsl(media * 37 + 80, .8, .38)],
+        ),
+      ),
+      child: Icon(mediaIcons[media % mediaIcons.length],
+          size: iconSize, color: Colors.white.withAlpha(190)),
+    );
 
 void toast(BuildContext c, String msg) {
   final p = c.p;
@@ -258,13 +294,13 @@ class Empty extends StatelessWidget {
   }
 }
 
-const _mediaIcons = [
+const mediaIcons = [
   LucideIcons.sparkles, LucideIcons.sun, LucideIcons.music,
   LucideIcons.camera, LucideIcons.coffee, LucideIcons.mountain,
 ];
 
 void openTag(BuildContext c, String tag) =>
-    Navigator.of(c).push(slide(HashtagScreen(tag: tag.toLowerCase())));
+    pushOnce(c, 'tag:${tag.toLowerCase()}', HashtagScreen(tag: tag.toLowerCase()));
 
 const kSaveColor = Color(0xFFFF9F1C);
 
@@ -273,7 +309,19 @@ class PostCard extends StatelessWidget {
   final bool detail;
   const PostCard(this.post, {super.key, this.detail = false});
 
-  bool get _canvas => post.bg >= 0 || post.image != null || post.stickers.isNotEmpty;
+  bool get _canvas =>
+      post.bg >= 0 || post.image != null || post.video != null || post.stickers.isNotEmpty;
+
+  bool get _hasMedia => post.image != null || post.video != null;
+
+  void _openMedia(BuildContext c) => pushOnce(
+      c,
+      'viewer:${post.id}',
+      MediaViewer(
+        image: post.image,
+        video: post.video,
+        placeholder: !_hasMedia && post.media >= 0 ? post.media : null,
+      ));
 
   Widget _text(BuildContext c, Pal p) {
     final color = post.tcolor >= 0 ? textColors[post.tcolor] : p.text;
@@ -428,8 +476,10 @@ class PostCard extends StatelessWidget {
                 child: PostCanvas(
                   bg: post.bg,
                   image: post.image,
+                  video: post.video != null,
+                  onTap: detail && _hasMedia ? () => _openMedia(context) : null,
                   stickers: post.stickers,
-                  height: onBg ? 240 : (post.image != null ? 250 : 170),
+                  height: onBg ? 240 : (_hasMedia ? 250 : 170),
                   center: onBg
                       ? Text(post.text, textAlign: TextAlign.center,
                           style: postStyle(post.font,
@@ -438,7 +488,9 @@ class PostCard extends StatelessWidget {
                 ),
               )
             else if (post.media >= 0)
-              Container(
+              GestureDetector(
+                onTap: detail ? () => _openMedia(context) : null,
+                child: Container(
                 margin: const EdgeInsets.only(top: 10),
                 height: 190,
                 width: double.infinity,
@@ -451,13 +503,14 @@ class PostCard extends StatelessWidget {
                     colors: [hsl(post.media * 37 + 10), hsl(post.media * 37 + 80, .8, .38)],
                   ),
                 ),
-                child: Icon(_mediaIcons[post.media % _mediaIcons.length],
+                child: Icon(mediaIcons[post.media % mediaIcons.length],
                     size: 60, color: Colors.white.withAlpha(190)),
+              ),
               ),
             if (onBg) _chips(context, p),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               _Act(LucideIcons.messageCircle, post.commentCount,
-                  detail ? null : () => Navigator.of(context).push(slide(PostDetail(post)))),
+                  detail ? null : () => openPost(context, post)),
               ReactButton(
                 shape: Shape.heart, icon: LucideIcons.heart, active: post.liked,
                 color: p.danger, idle: p.sub, count: post.likeCount, onTap: () => s.toggleLike(post),
@@ -478,7 +531,7 @@ class PostCard extends StatelessWidget {
       ]),
     );
     if (!detail) {
-      card = Tap(onTap: () => Navigator.of(context).push(slide(PostDetail(post))), child: card);
+      card = Tap(onTap: () => openPost(context, post), child: card);
     }
     return RepaintBoundary(child: card);
   }

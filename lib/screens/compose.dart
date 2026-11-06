@@ -24,6 +24,7 @@ class _ComposeState extends State<ComposeScreen> {
   late int _font = widget.edit?.font ?? 0;
   late int _tc = widget.edit?.tcolor ?? -1;
   late String? _img = widget.edit?.image;
+  late String? _vid = widget.edit?.video;
   late final List<Sticker> _st = [...?widget.edit?.stickers.map((e) => e.copy())];
   _Panel _panel = _Panel.none;
 
@@ -46,10 +47,11 @@ class _ComposeState extends State<ComposeScreen> {
       // asks for photo permission (system dialog) the first time, then opens our own picker
       await MediaLibrary.I.requestAccess();
       if (!mounted) return;
-      final path = await pickMedia(context);
-      if (path == null || !mounted) return;
+      final m = await pickMedia(context);
+      if (m == null || !mounted) return;
       setState(() {
-        _img = path;
+        _img = m.image;
+        _vid = m.video;
         _bg = -1;
         if (_tc == 0 || _tc == 1) _tc = -1;
       });
@@ -60,7 +62,10 @@ class _ComposeState extends State<ComposeScreen> {
 
   void _setBg(int i) => setState(() {
         _bg = i;
-        if (i >= 0) _img = null;
+        if (i >= 0) {
+          _img = null;
+          _vid = null;
+        }
         if (i < 0 && (_tc == 0 || _tc == 1)) _tc = -1;
       });
 
@@ -183,7 +188,7 @@ class _ComposeState extends State<ComposeScreen> {
     final len = Native.length(_c.text);
     final over = len > max;
     final tags = Native.tags(_c.text).toSet().toList();
-    final can = (text.isNotEmpty || _img != null || _st.isNotEmpty) && !over;
+    final can = (text.isNotEmpty || _img != null || _vid != null || _st.isNotEmpty) && !over;
     final editing = widget.edit != null;
     final onBg = _bg >= 0;
     return Scaffold(
@@ -194,7 +199,7 @@ class _ComposeState extends State<ComposeScreen> {
               ? () {
                   s.publish(
                     edit: widget.edit, text: text, bg: _bg, font: _font, tcolor: _tc,
-                    image: _img, stickers: _st,
+                    image: _img, video: _vid, stickers: _st,
                   );
                   Navigator.of(context).pop(true);
                 }
@@ -224,14 +229,17 @@ class _ComposeState extends State<ComposeScreen> {
                   const SizedBox(height: 12),
                   Stack(children: [
                     PostCanvas(
-                      bg: -1, image: _img, stickers: _st, height: _img != null ? 280 : 200,
-                      editable: true, onChanged: () => setState(() {}),
+                      bg: -1, image: _img, video: _vid != null, stickers: _st,
+                      height: _img != null ? 280 : 200, editable: true, onChanged: () => setState(() {}),
                     ),
                     if (_img != null)
                       Positioned(
                         top: 10, right: 10,
                         child: Tap(
-                          onTap: () => setState(() => _img = null),
+                          onTap: () => setState(() {
+                            _img = null;
+                            _vid = null;
+                          }),
                           child: Container(
                             width: 32, height: 32,
                             decoration: const BoxDecoration(color: Color(0x99000000), shape: BoxShape.circle),
@@ -276,7 +284,7 @@ class _ComposeState extends State<ComposeScreen> {
                 child: _panelView(p),
               ),
               Row(children: [
-                _tool(p, Icon(LucideIcons.image, size: 22, color: _img != null ? p.accent : p.sub), false, _pick),
+                _tool(p, Icon(LucideIcons.image, size: 22, color: _img != null || _vid != null ? p.accent : p.sub), false, _pick),
                 _tool(p, Icon(LucideIcons.palette, size: 22, color: _panel == _Panel.bg || onBg ? p.accent : p.sub),
                     _panel == _Panel.bg, () => _togglePanel(_Panel.bg)),
                 _tool(p, Icon(LucideIcons.type, size: 22, color: _panel == _Panel.font || _font != 0 ? p.accent : p.sub),

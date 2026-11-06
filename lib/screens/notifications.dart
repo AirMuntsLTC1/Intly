@@ -55,7 +55,7 @@ class _Row extends StatelessWidget {
           s.markRead(n);
           final post = n.type == 'follow' ? null : s.postById(n.postId);
           if (post != null) {
-            Navigator.of(context).push(slide(PostDetail(post, highlightId: n.commentId)));
+            openPost(context, post, highlightId: n.commentId);
           } else if (n.type == 'follow') {
             openProfile(context, u.id);
           } else {
