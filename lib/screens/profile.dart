@@ -146,7 +146,14 @@ class _ProfileState extends State<ProfileScreen> {
             ]),
           ),
           if (list.isEmpty)
-            SliverToBoxAdapter(child: Empty(LucideIcons.inbox, 'Nothing here yet'))
+            SliverToBoxAdapter(
+              child: Empty(LucideIcons.inbox, const [
+                'No posts yet',
+                'No photos yet',
+                'Tap the bookmark on any post to save it here',
+                'Posts you like will show up here',
+              ][_tab]),
+            )
           else
             SliverList(
               delegate: SliverChildBuilderDelegate(

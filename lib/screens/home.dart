@@ -29,6 +29,8 @@ class HomeScreen extends StatelessWidget {
                       style: ts(Colors.white, 28, FontWeight.w900).copyWith(letterSpacing: -1)),
                 ),
                 const Spacer(),
+                IconBtn(p == Pal.dark ? LucideIcons.sun : LucideIcons.moon,
+                    () => s.setMode(p == Pal.dark ? 'light' : 'dark')),
                 IconBtn(LucideIcons.search, () => s.setTab(1)),
                 IconBtn(LucideIcons.settings, () => Navigator.of(context).push(slide(const SettingsScreen()))),
                 const SizedBox(width: 6),
@@ -38,6 +40,7 @@ class HomeScreen extends StatelessWidget {
         ),
         Expanded(
           child: ListView.builder(
+            padding: EdgeInsets.zero,
             cacheExtent: 900,
             itemCount: posts.length + 1,
             itemBuilder: (c, i) => i == 0

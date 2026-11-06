@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'native.dart';
+import 'styles.dart';
 
 class User {
   final String id;
@@ -13,20 +15,26 @@ class User {
 
 class Post {
   final String id, userId;
-  final String text;
+  String text;
   int minutes;
   final int media, likes, shares;
   int commentCount;
   bool liked = false, saved = false;
+  int bg = -1, font = 0, tcolor = -1;
+  String? image;
+  List<Sticker> stickers = [];
   Post(this.id, this.userId, this.text, this.minutes, this.media, this.likes,
       this.commentCount, this.shares);
   int get likeCount => likes + (liked ? 1 : 0);
 }
 
 class Comment {
-  final String postId, userId, text;
+  final String id, postId, userId, text;
   final int minutes;
-  Comment(this.postId, this.userId, this.text, this.minutes);
+  final String? parent; // id of top-level comment when this is a reply
+  final String? replyToUser; // set when replying to a reply
+  Comment(this.id, this.postId, this.userId, this.text, this.minutes, this.parent,
+      [this.replyToUser]);
 }
 
 class Notif {
@@ -44,7 +52,8 @@ class Scope extends InheritedNotifier<AppState> {
 }
 
 class AppState extends ChangeNotifier {
-  final dark = ValueNotifier<bool>(true);
+  /// 'system' (default, follows the phone), 'light' or 'dark'.
+  final mode = ValueNotifier<String>('system');
   int tab = 0;
   final Map<String, User> users = {};
   final List<Post> posts = [];
@@ -80,7 +89,7 @@ class AppState extends ChangeNotifier {
           p['likes'], p['comments'], p['shares']));
     }
     for (final c in raw['comments']) {
-      comments.add(Comment(c['post'], c['user'], c['text'], c['minutes']));
+      comments.add(Comment(c['id'], c['post'], c['user'], c['text'], c['minutes'], c['parent']));
     }
     int i = 0;
     for (final n in raw['notifs']) {
@@ -88,7 +97,7 @@ class AppState extends ChangeNotifier {
     }
     _p = await SharedPreferences.getInstance();
     final sp = _p!;
-    dark.value = sp.getBool('dark') ?? true;
+    mode.value = sp.getString('theme') ?? 'system';
     me.name = sp.getString('name') ?? me.name;
     me.bio = sp.getString('bio') ?? me.bio;
     following.addAll(sp.getStringList('following') ?? const []);
@@ -97,7 +106,14 @@ class AppState extends ChangeNotifier {
     _mine = jsonDecode(sp.getString('mine') ?? '[]') as List<dynamic>;
     final now = DateTime.now().millisecondsSinceEpoch;
     for (final m in _mine) {
-      posts.add(Post(m['id'], 'me', m['text'], ((now - (m['ts'] as int)) / 60000).floor(), -1, 0, 0, 0));
+      final p = Post(m['id'], 'me', m['text'], ((now - (m['ts'] as int)) / 60000).floor(), -1, 0, 0, 0);
+      p.bg = (m['bg'] ?? -1) as int;
+      p.font = (m['font'] ?? 0) as int;
+      p.tcolor = (m['tc'] ?? -1) as int;
+      final img = m['img'] as String?;
+      p.image = (img != null && File(img).existsSync()) ? img : null;
+      p.stickers = ((m['st'] ?? []) as List).map((e) => Sticker.fromJson(e as List)).toList();
+      posts.add(p);
     }
     for (final p in posts) {
       p.liked = liked.contains(p.id);
@@ -110,7 +126,7 @@ class AppState extends ChangeNotifier {
   Future<void> _save() async {
     final sp = _p;
     if (sp == null) return;
-    await sp.setBool('dark', dark.value);
+    await sp.setString('theme', mode.value);
     await sp.setString('name', me.name);
     await sp.setString('bio', me.bio);
     await sp.setStringList('following', following.toList());
@@ -133,8 +149,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setDark(bool v) {
-    dark.value = v;
+  void setMode(String v) {
+    mode.value = v;
     _save();
   }
 
@@ -158,19 +174,58 @@ class AppState extends ChangeNotifier {
     _commit();
   }
 
-  void addPost(String text) {
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final id = 'm$ts';
-    _mine.insert(0, {'id': id, 'text': text, 'ts': ts});
-    posts.insert(0, Post(id, 'me', text, 0, -1, 0, 0, 0));
+  /// Create a new post, or update [edit] when editing.
+  void publish({
+    Post? edit,
+    required String text,
+    required int bg,
+    required int font,
+    required int tcolor,
+    String? image,
+    required List<Sticker> stickers,
+  }) {
+    final Post post;
+    int ts = DateTime.now().millisecondsSinceEpoch;
+    if (edit != null) {
+      post = edit;
+      final old = _mine.indexWhere((m) => m['id'] == edit.id);
+      if (old >= 0) ts = _mine[old]['ts'] as int;
+    } else {
+      post = Post('m$ts', 'me', text, 0, -1, 0, 0, 0);
+      posts.insert(0, post);
+    }
+    post.text = text;
+    post.bg = bg;
+    post.font = font;
+    post.tcolor = tcolor;
+    post.image = image;
+    post.stickers = stickers;
+    final map = {
+      'id': post.id, 'text': text, 'ts': ts, 'bg': bg, 'font': font, 'tc': tcolor,
+      'img': image, 'st': stickers.map((e) => e.toJson()).toList(),
+    };
+    final idx = _mine.indexWhere((m) => m['id'] == post.id);
+    if (idx >= 0) {
+      _mine[idx] = map;
+    } else {
+      _mine.insert(0, map);
+    }
+    _commit();
+  }
+
+  void deletePost(Post p) {
+    posts.remove(p);
+    _mine.removeWhere((m) => m['id'] == p.id);
+    comments.removeWhere((c) => c.postId == p.id);
     _commit();
   }
 
   List<Comment> commentsOf(String postId) =>
       comments.where((c) => c.postId == postId).toList();
 
-  void addComment(Post p, String text) {
-    comments.add(Comment(p.id, 'me', text, 0));
+  void addComment(Post p, String text, {String? parent, String? replyToUser}) {
+    comments.add(Comment('n${DateTime.now().millisecondsSinceEpoch}', p.id, 'me', text, 0,
+        parent, replyToUser));
     p.commentCount++;
     notifyListeners();
   }
@@ -206,7 +261,7 @@ class AppState extends ChangeNotifier {
     me.name = 'You';
     me.bio = 'Hello Intly 👋';
     _defaults.forEach((k, v) => flags[k] = v);
-    dark.value = true;
+    mode.value = 'system';
     for (final n in notifs.take(4)) {
       n.read = false;
     }

@@ -36,7 +36,9 @@ for i, n in enumerate(NAMES):
                   "bio": random.choice(BIOS), "hue": random.randint(0, 359),
                   "followers": random.randint(120, 9800), "following": random.randint(40, 900)})
 
+REPLIES = ["Thank you!", "Appreciate it", "Glad you liked it", "Haha right?", "Exactly!", "Thanks for stopping by"]
 posts, comments = [], []
+cid = 0
 minutes = 3
 for i in range(60):
     minutes += random.choice([4, 9, 17, 35, 60, 120, 240])
@@ -46,10 +48,20 @@ for i in range(60):
          "media": random.randint(0, 40) if random.random() < 0.45 else -1,
          "likes": random.randint(2, 900), "shares": random.randint(0, 120)}
     cs = random.sample(COMMENTS, random.randint(0, 4))
+    n = 0
     for c in cs:
-        comments.append({"post": p["id"], "user": random.choice(users)["id"],
-                         "text": c, "minutes": random.randint(1, 600)})
-    p["comments"] = len(cs) + random.randint(0, 30)
+        cid += 1
+        top = {"id": f"c{cid}", "post": p["id"], "user": random.choice(users)["id"],
+               "text": c, "minutes": random.randint(30, 600), "parent": None}
+        comments.append(top); n += 1
+        if random.random() < 0.5:
+            cid += 1
+            who = p["user"] if random.random() < 0.6 else random.choice(users)["id"]
+            comments.append({"id": f"c{cid}", "post": p["id"], "user": who,
+                             "text": random.choice(REPLIES),
+                             "minutes": max(1, top["minutes"] - random.randint(5, 25)),
+                             "parent": top["id"]}); n += 1
+    p["comments"] = n + random.randint(0, 30)
     posts.append(p)
 
 NT = [("like", "liked your post"), ("follow", "started following you"),

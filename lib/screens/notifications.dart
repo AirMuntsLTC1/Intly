@@ -22,6 +22,7 @@ class NotificationsScreen extends StatelessWidget {
           child: list.isEmpty
               ? const Empty(LucideIcons.bellOff, 'Nothing yet')
               : ListView.builder(
+                  padding: EdgeInsets.zero,
                   cacheExtent: 600,
                   itemCount: list.length,
                   itemBuilder: (c, i) => _Row(list[i]),

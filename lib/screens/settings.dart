@@ -92,12 +92,41 @@ class SettingsScreen extends StatelessWidget {
       body: Column(children: [
         const TopBar('Settings', back: true),
         Expanded(
-          child: ListView(children: [
-            _head(p, 'Appearance'),
-            ValueListenableBuilder<bool>(
-              valueListenable: s.dark,
-              builder: (c, d, _) => _row(p, LucideIcons.moon, 'Dark mode',
-                  sub: d ? 'On' : 'Off', trailing: Toggle(d, s.setDark), onTap: () => s.setDark(!d)),
+          child: ListView(padding: EdgeInsets.zero, children: [
+            _head(p, 'Theme (System follows your phone)'),
+            ValueListenableBuilder<String>(
+              valueListenable: s.mode,
+              builder: (c, m, _) => Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Row(children: [
+                  for (final o in const [
+                    ['system', 'System', 0],
+                    ['light', 'Light', 1],
+                    ['dark', 'Dark', 2],
+                  ])
+                    Expanded(
+                      child: Tap(
+                        onTap: () => s.setMode(o[0] as String),
+                        child: Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: m == o[0] ? p.accent : p.card,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(children: [
+                            Icon(
+                              o[2] == 0 ? LucideIcons.smartphone : (o[2] == 1 ? LucideIcons.sun : LucideIcons.moon),
+                              size: 20, color: m == o[0] ? Colors.white : p.sub),
+                            const SizedBox(height: 4),
+                            Text(o[1] as String,
+                                style: ts(m == o[0] ? Colors.white : p.text, 13, FontWeight.w700)),
+                          ]),
+                        ),
+                      ),
+                    ),
+                ]),
+              ),
             ),
             _head(p, 'Notifications'),
             flag(LucideIcons.bell, 'Push notifications', 'push', 'Allow alerts from Intly'),

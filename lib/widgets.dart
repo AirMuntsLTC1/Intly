@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'fx.dart';
+import 'native.dart';
+import 'screens/compose.dart';
 import 'screens/detail.dart';
+import 'screens/hashtag.dart';
+import 'styles.dart';
 import 'screens/profile.dart';
 import 'state.dart';
 import 'theme.dart';
@@ -258,21 +263,50 @@ const _mediaIcons = [
   LucideIcons.camera, LucideIcons.coffee, LucideIcons.mountain,
 ];
 
+void openTag(BuildContext c, String tag) =>
+    Navigator.of(c).push(slide(HashtagScreen(tag: tag.toLowerCase())));
+
+const kSaveColor = Color(0xFFFF9F1C);
+
 class PostCard extends StatelessWidget {
   final Post post;
   final bool detail;
   const PostCard(this.post, {super.key, this.detail = false});
 
-  Widget _rich(Pal p) {
+  bool get _canvas => post.bg >= 0 || post.image != null || post.stickers.isNotEmpty;
+
+  Widget _text(BuildContext c, Pal p) {
+    final color = post.tcolor >= 0 ? textColors[post.tcolor] : p.text;
+    final style = postStyle(post.font, color, detail ? 18 : 15);
     final spans = <InlineSpan>[];
     int last = 0;
     for (final m in RegExp(r'#[A-Za-z0-9_]+').allMatches(post.text)) {
       if (m.start > last) spans.add(TextSpan(text: post.text.substring(last, m.start)));
-      spans.add(TextSpan(text: m.group(0), style: TextStyle(color: p.accent, fontWeight: FontWeight.w600)));
+      final tag = m.group(0)!;
+      spans.add(WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: Tap(
+          onTap: () => openTag(c, tag.substring(1)),
+          child: Text(tag, style: style.copyWith(color: p.accent, fontWeight: FontWeight.w700)),
+        ),
+      ));
       last = m.end;
     }
     if (last < post.text.length) spans.add(TextSpan(text: post.text.substring(last)));
-    return Text.rich(TextSpan(children: spans), style: ts(p.text, detail ? 17 : 15, FontWeight.w400, 1.42));
+    return Text.rich(TextSpan(children: spans, style: style));
+  }
+
+  Widget _chips(BuildContext c, Pal p) {
+    final tags = Native.tags(post.text).toSet().toList();
+    if (tags.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(spacing: 8, runSpacing: 4, children: [
+        for (final t in tags)
+          Tap(onTap: () => openTag(c, t), child: Text('#$t', style: ts(p.accent, 14, FontWeight.w700))),
+      ]),
+    );
   }
 
   void _more(BuildContext c) {
@@ -290,21 +324,31 @@ class PostCard extends StatelessWidget {
             Container(width: 40, height: 4,
                 decoration: BoxDecoration(color: p.line, borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 8),
-            _SheetRow(post.saved ? LucideIcons.bookmark : LucideIcons.bookmark,
-                post.saved ? 'Remove from saved' : 'Save post', () {
+            _SheetRow(LucideIcons.bookmark, post.saved ? 'Remove from saved' : 'Save post', () {
               Navigator.pop(sheet);
               s.toggleSave(post);
             }),
-            if (u.id != 'me')
+            if (u.id == 'me') ...[
+              _SheetRow(LucideIcons.pencil, 'Edit post', () {
+                Navigator.pop(sheet);
+                Navigator.of(c).push(slide(ComposeScreen(edit: post)));
+              }),
+              _SheetRow(LucideIcons.trash2, 'Delete post', () {
+                Navigator.pop(sheet);
+                s.deletePost(post);
+                if (detail) Navigator.of(c).maybePop();
+              }, danger: true),
+            ] else ...[
               _SheetRow(s.following.contains(u.id) ? LucideIcons.userX : LucideIcons.userPlus,
                   s.following.contains(u.id) ? 'Unfollow @${u.handle}' : 'Follow @${u.handle}', () {
                 Navigator.pop(sheet);
                 s.toggleFollow(u.id);
               }),
-            _SheetRow(LucideIcons.flag, 'Report', () {
-              Navigator.pop(sheet);
-              toast(c, 'Thanks, we will review this post');
-            }, danger: true),
+              _SheetRow(LucideIcons.flag, 'Report', () {
+                Navigator.pop(sheet);
+                toast(c, 'Thanks, we will review this post');
+              }, danger: true),
+            ],
           ]),
         ),
       ),
@@ -316,6 +360,7 @@ class PostCard extends StatelessWidget {
     final p = context.p;
     final s = context.s;
     final u = s.user(post.userId);
+    final onBg = post.bg >= 0;
     Widget card = Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: p.line))),
@@ -335,8 +380,23 @@ class PostCard extends StatelessWidget {
                   child: Icon(LucideIcons.moreHorizontal, size: 18, color: p.sub)),
             ]),
             const SizedBox(height: 4),
-            _rich(p),
-            if (post.media >= 0)
+            if (!onBg && post.text.isNotEmpty) _text(context, p),
+            if (_canvas)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: PostCanvas(
+                  bg: post.bg,
+                  image: post.image,
+                  stickers: post.stickers,
+                  height: onBg ? 240 : (post.image != null ? 250 : 170),
+                  center: onBg
+                      ? Text(post.text, textAlign: TextAlign.center,
+                          style: postStyle(post.font,
+                              post.tcolor >= 0 ? textColors[post.tcolor] : Colors.white, 24))
+                      : null,
+                ),
+              )
+            else if (post.media >= 0)
               Container(
                 margin: const EdgeInsets.only(top: 10),
                 height: 190,
@@ -353,15 +413,24 @@ class PostCard extends StatelessWidget {
                 child: Icon(_mediaIcons[post.media % _mediaIcons.length],
                     size: 60, color: Colors.white.withAlpha(190)),
               ),
+            if (onBg) _chips(context, p),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              _Act(LucideIcons.messageCircle, post.commentCount, false, p.accent,
+              _Act(LucideIcons.messageCircle, post.commentCount,
                   detail ? null : () => Navigator.of(context).push(slide(PostDetail(post)))),
-              _Act(LucideIcons.heart, post.likeCount, post.liked, p.danger, () => s.toggleLike(post)),
-              _Act(LucideIcons.share2, post.shares, false, p.accent, () {
+              ReactButton(
+                shape: Shape.heart, icon: LucideIcons.heart, active: post.liked,
+                color: p.danger, idle: p.sub, count: post.likeCount, onTap: () => s.toggleLike(post),
+              ),
+              _Act(LucideIcons.share2, post.shares, () {
                 Clipboard.setData(ClipboardData(text: 'intly://post/${post.id}'));
                 toast(context, 'Link copied');
               }),
-              _Act(LucideIcons.bookmark, null, post.saved, p.accent, () => s.toggleSave(post)),
+              ReactButton(
+                shape: Shape.bookmark, icon: LucideIcons.bookmark, active: post.saved,
+                color: kSaveColor, idle: p.sub, onTap: () {
+                  s.toggleSave(post);
+                },
+              ),
             ]),
           ]),
         ),
@@ -376,24 +445,20 @@ class PostCard extends StatelessWidget {
 
 class _Act extends StatelessWidget {
   final IconData icon;
-  final int? count;
-  final bool active;
-  final Color activeColor;
+  final int count;
   final VoidCallback? onTap;
-  const _Act(this.icon, this.count, this.active, this.activeColor, this.onTap);
+  const _Act(this.icon, this.count, this.onTap);
   @override
   Widget build(BuildContext context) {
-    final c = active ? activeColor : context.p.sub;
+    final c = context.p.sub;
     return Tap(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         child: Row(children: [
           Icon(icon, size: 20, color: c),
-          if (count != null) ...[
-            const SizedBox(width: 6),
-            Text(compact(count!), style: ts(c, 13, FontWeight.w600)),
-          ],
+          const SizedBox(width: 6),
+          Text(compact(count), style: ts(c, 13, FontWeight.w600)),
         ]),
       ),
     );

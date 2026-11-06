@@ -3,7 +3,7 @@
 Simple, fast social app. **Flutter** (UI, Lucide icons) + **C++** (native core via FFI) + **Python** (data tooling).
 
 ## Screens
-Home (stories + feed) · Explore (search, trending, who to follow) · Compose · Notifications ·
+Home (stories + feed, animated like and save) · Explore (search, trending, who to follow) · Compose · Notifications ·
 Profile (own + others) · Edit profile · Post detail + comments · Settings
 
 ## Build with GitHub (Termux)
@@ -21,4 +21,3 @@ First build ~6-8 min, cached builds are much faster.
 ## Layout
 - `lib/` Flutter app  - `native/intly_native.cpp` C++ core (hashtags, UTF-8 length, hot ranking)
 - `tools/gen_seed.py` Python demo-data generator  - `.github/workflows/build.yml` CI
-# Intly

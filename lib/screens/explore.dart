@@ -44,7 +44,7 @@ class _ExploreState extends State<ExploreScreen> {
       _section(p, LucideIcons.trendingUp, 'Trending'),
       for (int i = 0; i < tags.length && i < 6; i++)
         Tap(
-          onTap: () => setState(() => _c.text = '#${tags[i].key}'),
+          onTap: () => openTag(context, tags[i].key),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(children: [
@@ -153,6 +153,7 @@ class _ExploreState extends State<ExploreScreen> {
         ),
         Expanded(
           child: ListView.builder(
+            padding: EdgeInsets.zero,
             cacheExtent: 800,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             itemCount: items.length,
