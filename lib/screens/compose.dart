@@ -1,3 +1,5 @@
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart'
+    show EmojiPicker, Config, EmojiViewConfig, CategoryViewConfig, BottomActionBarConfig;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../fx.dart';
@@ -39,7 +41,11 @@ class _ComposeState extends State<ComposeScreen> {
   Color _color(Pal p) =>
       _tc >= 0 ? textColors[_tc] : (_bg >= 0 ? Colors.white : p.text);
 
-  void _togglePanel(_Panel x) => setState(() => _panel = _panel == x ? _Panel.none : x);
+  void _togglePanel(_Panel x) {
+    // make room for the big emoji panel: close the keyboard first
+    if (x == _Panel.sticker) FocusScope.of(context).unfocus();
+    setState(() => _panel = _panel == x ? _Panel.none : x);
+  }
 
   Future<void> _pick() async {
     FocusScope.of(context).unfocus();
@@ -135,19 +141,23 @@ class _ComposeState extends State<ComposeScreen> {
                 child: const SizedBox.shrink()),
         ]);
       case _Panel.sticker:
-        return SizedBox(
-          height: 126,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Wrap(spacing: 4, runSpacing: 4, children: [
-              for (final e in stickerList)
-                Tap(
-                  onTap: () => setState(() {
-                    _st.add(Sticker(e, 0.3 + (_st.length % 5) * 0.1, 0.35 + (_st.length % 4) * 0.1));
-                  }),
-                  child: SizedBox(width: 46, height: 46, child: Center(child: Text(e, style: const TextStyle(fontSize: 28)))),
-                ),
-            ]),
+        // every emoji (all categories, skin tones, recents) from emoji_picker_flutter;
+        // tapping one drops it on the canvas as a sticker, like before
+        return EmojiPicker(
+          onEmojiSelected: (category, emoji) => setState(() {
+            _st.add(Sticker(emoji.emoji, 0.3 + (_st.length % 5) * 0.1, 0.35 + (_st.length % 4) * 0.1));
+          }),
+          config: Config(
+            height: 290,
+            checkPlatformCompatibility: true,
+            emojiViewConfig: EmojiViewConfig(columns: 8, emojiSizeMax: 30, backgroundColor: p.bg),
+            categoryViewConfig: CategoryViewConfig(
+              backgroundColor: p.bg,
+              indicatorColor: p.accent,
+              iconColor: p.sub,
+              iconColorSelected: p.accent,
+            ),
+            bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
           ),
         );
       case _Panel.none:
