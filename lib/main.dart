@@ -82,3 +82,4 @@ class _IntlyAppState extends State<IntlyApp> with WidgetsBindingObserver {
     );
   }
 }
+

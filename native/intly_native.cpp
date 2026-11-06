@@ -50,3 +50,4 @@ INTLY_EXPORT int32_t intly_extract_tags(const char* s, char* out, int32_t cap) {
   out[w] = 0;
   return w;
 }
+

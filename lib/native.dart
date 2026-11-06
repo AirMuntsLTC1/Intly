@@ -84,3 +84,4 @@ class Native {
     return 2 * s;
   }
 }
+

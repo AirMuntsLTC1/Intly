@@ -1,9 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:path_provider/path_provider.dart';
 import '../fx.dart';
+import '../media_picker.dart';
 import '../native.dart';
 import '../state.dart';
 import '../styles.dart';
@@ -43,20 +41,18 @@ class _ComposeState extends State<ComposeScreen> {
   void _togglePanel(_Panel x) => setState(() => _panel = _panel == x ? _Panel.none : x);
 
   Future<void> _pick() async {
+    FocusScope.of(context).unfocus();
     try {
-      final x = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
-      if (x == null) return;
-      final dir = await getApplicationDocumentsDirectory();
-      final d = Directory('${dir.path}/media');
-      if (!d.existsSync()) d.createSync(recursive: true);
-      final f = await File(x.path).copy('${d.path}/${DateTime.now().millisecondsSinceEpoch}.jpg');
-      if (mounted) {
-        setState(() {
-          _img = f.path;
-          _bg = -1;
-          if (_tc == 0 || _tc == 1) _tc = -1;
-        });
-      }
+      // asks for photo permission (system dialog) the first time, then opens our own picker
+      await MediaLibrary.I.requestAccess();
+      if (!mounted) return;
+      final path = await pickMedia(context);
+      if (path == null || !mounted) return;
+      setState(() {
+        _img = path;
+        _bg = -1;
+        if (_tc == 0 || _tc == 1) _tc = -1;
+      });
     } catch (_) {
       if (mounted) toast(context, 'Could not open gallery');
     }
@@ -310,3 +306,4 @@ class _ComposeState extends State<ComposeScreen> {
     );
   }
 }
+

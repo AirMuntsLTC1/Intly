@@ -80,3 +80,4 @@ class _EditState extends State<EditProfileScreen> {
     );
   }
 }
+

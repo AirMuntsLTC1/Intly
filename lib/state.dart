@@ -40,8 +40,11 @@ class Comment {
 class Notif {
   final String type, userId, text;
   final int minutes;
+  final String? postId; // post this notification is about
+  final String? commentId; // comment to highlight when the post opens
   bool read;
-  Notif(this.type, this.userId, this.text, this.minutes, this.read);
+  Notif(this.type, this.userId, this.text, this.minutes, this.read,
+      {this.postId, this.commentId});
 }
 
 class Scope extends InheritedNotifier<AppState> {
@@ -60,6 +63,7 @@ class AppState extends ChangeNotifier {
   final List<Comment> comments = [];
   final List<Notif> notifs = [];
   final Set<String> following = {};
+  final Set<String> reported = {};
   final Map<String, bool> flags = {};
   static const _defaults = {
     'push': true, 'likes': true, 'follows': true, 'private': false, 'activity': true,
@@ -74,6 +78,13 @@ class AppState extends ChangeNotifier {
       u.id == 'me' ? u.followers : u.followers + (following.contains(u.id) ? 1 : 0);
   int followingOf(User u) => u.id == 'me' ? following.length : u.following;
   List<Post> postsOf(String id) => posts.where((p) => p.userId == id).toList();
+  Post? postById(String? id) {
+    if (id == null) return null;
+    for (final p in posts) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
 
   Future<void> load() async {
     Native.init();
@@ -93,7 +104,8 @@ class AppState extends ChangeNotifier {
     }
     int i = 0;
     for (final n in raw['notifs']) {
-      notifs.add(Notif(n['type'], n['user'], n['text'], n['minutes'], i++ >= 4));
+      notifs.add(Notif(n['type'], n['user'], n['text'], n['minutes'], i++ >= 4,
+          postId: n['post'] as String?, commentId: n['comment'] as String?));
     }
     _p = await SharedPreferences.getInstance();
     final sp = _p!;
@@ -101,6 +113,7 @@ class AppState extends ChangeNotifier {
     me.name = sp.getString('name') ?? me.name;
     me.bio = sp.getString('bio') ?? me.bio;
     following.addAll(sp.getStringList('following') ?? const []);
+    reported.addAll(sp.getStringList('reported') ?? const []);
     final liked = (sp.getStringList('liked') ?? const []).toSet();
     final saved = (sp.getStringList('saved') ?? const []).toSet();
     _mine = jsonDecode(sp.getString('mine') ?? '[]') as List<dynamic>;
@@ -130,6 +143,7 @@ class AppState extends ChangeNotifier {
     await sp.setString('name', me.name);
     await sp.setString('bio', me.bio);
     await sp.setStringList('following', following.toList());
+    await sp.setStringList('reported', reported.toList());
     await sp.setStringList('liked', posts.where((p) => p.liked).map((p) => p.id).toList());
     await sp.setStringList('saved', posts.where((p) => p.saved).map((p) => p.id).toList());
     await sp.setString('mine', jsonEncode(_mine));
@@ -166,6 +180,11 @@ class AppState extends ChangeNotifier {
 
   void toggleSave(Post p) {
     p.saved = !p.saved;
+    _commit();
+  }
+
+  void reportPost(Post p) {
+    reported.add(p.id);
     _commit();
   }
 
@@ -252,6 +271,7 @@ class AppState extends ChangeNotifier {
   Future<void> reset() async {
     await _p?.clear();
     following.clear();
+    reported.clear();
     _mine = [];
     posts.removeWhere((p) => p.userId == 'me');
     for (final p in posts) {
@@ -268,3 +288,4 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 }
+

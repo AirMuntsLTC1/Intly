@@ -6,7 +6,9 @@ import '../widgets.dart';
 
 class PostDetail extends StatefulWidget {
   final Post post;
-  const PostDetail(this.post, {super.key});
+  /// Comment to scroll to and highlight (set when opened from a notification).
+  final String? highlightId;
+  const PostDetail(this.post, {super.key, this.highlightId});
   @override
   State<PostDetail> createState() => _PostDetailState();
 }
@@ -15,6 +17,34 @@ class _PostDetailState extends State<PostDetail> {
   final _c = TextEditingController();
   final _f = FocusNode();
   Comment? _replyTo;
+  final _hlKey = GlobalKey();
+  String? _hl;
+
+  @override
+  void initState() {
+    super.initState();
+    _hl = widget.highlightId;
+    if (_hl != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _revealHighlight(0));
+    }
+  }
+
+  void _revealHighlight(int tries) {
+    if (!mounted) return;
+    final ctx = _hlKey.currentContext;
+    if (ctx == null) {
+      if (tries < 10) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _revealHighlight(tries + 1));
+      }
+      return;
+    }
+    Scrollable.ensureVisible(ctx,
+        alignment: 0.25, duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic);
+    // let the tint fade away after a moment
+    Future.delayed(const Duration(milliseconds: 2400), () {
+      if (mounted) setState(() => _hl = null);
+    });
+  }
 
   @override
   void dispose() {
@@ -54,11 +84,13 @@ class _PostDetailState extends State<PostDetail> {
       ..sort((a, b) => a.minutes.compareTo(b.minutes));
     final items = <Widget>[PostCard(widget.post, detail: true)];
     for (final t in tops) {
-      items.add(_Tile(t, widget.post, 0, () => _reply(t)));
+      items.add(_Tile(t, widget.post, 0, () => _reply(t),
+          key: t.id == widget.highlightId ? _hlKey : null, highlight: t.id == _hl));
       final reps = all.where((c) => c.parent == t.id).toList()
         ..sort((a, b) => b.minutes.compareTo(a.minutes));
       for (final r in reps) {
-        items.add(_Tile(r, widget.post, 1, () => _reply(r)));
+        items.add(_Tile(r, widget.post, 1, () => _reply(r),
+            key: r.id == widget.highlightId ? _hlKey : null, highlight: r.id == _hl));
       }
     }
     final can = _c.text.trim().isNotEmpty;
@@ -70,6 +102,8 @@ class _PostDetailState extends State<PostDetail> {
           child: ListView.builder(
             padding: EdgeInsets.zero,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            // build every comment up front when we need to scroll to one
+            cacheExtent: widget.highlightId != null ? 4000 : null,
             itemCount: items.length,
             itemBuilder: (c, i) => items[i],
           ),
@@ -134,7 +168,8 @@ class _Tile extends StatelessWidget {
   final Post post;
   final int depth;
   final VoidCallback onReply;
-  const _Tile(this.c, this.post, this.depth, this.onReply);
+  final bool highlight;
+  const _Tile(this.c, this.post, this.depth, this.onReply, {super.key, this.highlight = false});
 
   @override
   Widget build(BuildContext context) {
@@ -143,9 +178,14 @@ class _Tile extends StatelessWidget {
     final u = s.user(c.userId);
     final isAuthor = c.userId == post.userId;
     final mention = c.replyToUser == null ? null : s.user(c.replyToUser!);
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOut,
       padding: EdgeInsets.fromLTRB(16 + depth * 44.0, 12, 16, 8),
-      decoration: depth == 0 ? BoxDecoration(border: Border(top: BorderSide(color: p.line))) : null,
+      decoration: BoxDecoration(
+        color: highlight ? p.accent.withAlpha(34) : Colors.transparent,
+        border: depth == 0 ? Border(top: BorderSide(color: p.line)) : null,
+      ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Tap(onTap: () => openProfile(context, u.id), child: Avatar(u, depth == 0 ? 36 : 30)),
         const SizedBox(width: 10),
@@ -186,3 +226,4 @@ class _Tile extends StatelessWidget {
     );
   }
 }
+

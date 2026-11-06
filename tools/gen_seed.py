@@ -72,7 +72,20 @@ m = 2
 for i in range(18):
     k, txt = random.choice(NT)
     m += random.choice([5, 14, 40, 90, 300])
-    notifs.append({"type": k, "user": random.choice(users)["id"], "text": txt, "minutes": m})
+    n = {"type": k, "user": random.choice(users)["id"], "text": txt, "minutes": m}
+    if k != "follow":
+        # every non-follow notification points at a real post (opens it when tapped)
+        target = random.choice([x for x in posts if x["minutes"] > m] or posts)
+        n["post"] = target["id"]
+        if k == "comment":
+            # ...and a comment notification points at a real comment in that post,
+            # so the app can scroll to it and highlight it
+            cid += 1
+            comments.append({"id": f"c{cid}", "post": target["id"], "user": n["user"],
+                             "text": txt.split(": ", 1)[1], "minutes": m, "parent": None})
+            target["comments"] += 1
+            n["comment"] = f"c{cid}"
+    notifs.append(n)
 
 os.makedirs("assets", exist_ok=True)
 with open("assets/seed.json", "w", encoding="utf-8") as f:

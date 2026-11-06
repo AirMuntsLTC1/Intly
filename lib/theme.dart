@@ -44,3 +44,4 @@ class NoGlow extends ScrollBehavior {
   @override
   ScrollPhysics getScrollPhysics(BuildContext c) => const ClampingScrollPhysics();
 }
+

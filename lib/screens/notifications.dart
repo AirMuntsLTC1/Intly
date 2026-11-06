@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../state.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'detail.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
@@ -52,14 +53,27 @@ class _Row extends StatelessWidget {
       child: Tap(
         onTap: () {
           s.markRead(n);
-          openProfile(context, u.id);
+          final post = n.type == 'follow' ? null : s.postById(n.postId);
+          if (post != null) {
+            Navigator.of(context).push(slide(PostDetail(post, highlightId: n.commentId)));
+          } else if (n.type == 'follow') {
+            openProfile(context, u.id);
+          } else {
+            toast(context, 'This post is no longer available');
+          }
         },
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           color: n.read ? null : p.accent.withAlpha(22),
           child: Row(children: [
             Stack(clipBehavior: Clip.none, children: [
-              Avatar(u, 46),
+              Tap(
+                onTap: () {
+                  s.markRead(n);
+                  openProfile(context, u.id);
+                },
+                child: Avatar(u, 46),
+              ),
               Positioned(
                 right: -4, bottom: -4,
                 child: Container(
@@ -90,3 +104,4 @@ class _Row extends StatelessWidget {
     );
   }
 }
+

@@ -344,11 +344,52 @@ class PostCard extends StatelessWidget {
                 Navigator.pop(sheet);
                 s.toggleFollow(u.id);
               }),
-              _SheetRow(LucideIcons.flag, 'Report', () {
+              _SheetRow(LucideIcons.flag, s.reported.contains(post.id) ? 'Post reported' : 'Report post', () {
                 Navigator.pop(sheet);
-                toast(c, 'Thanks, we will review this post');
+                if (s.reported.contains(post.id)) {
+                  toast(c, 'You already reported this post');
+                } else {
+                  _report(c);
+                }
               }, danger: true),
             ],
+          ]),
+        ),
+      ),
+    );
+  }
+
+  void _report(BuildContext c) {
+    final p = c.p;
+    final s = c.s;
+    const reasons = <(IconData, String)>[
+      (LucideIcons.inbox, 'Spam'),
+      (LucideIcons.shieldAlert, 'Harassment or hate'),
+      (LucideIcons.eyeOff, 'Nudity or sexual content'),
+      (LucideIcons.info, 'False information'),
+      (LucideIcons.moreHorizontal, 'Something else'),
+    ];
+    showModalBottomSheet<void>(
+      context: c,
+      backgroundColor: p.card,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheet) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: p.line, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 14),
+            Text('Report post', style: ts(p.text, 17, FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text('Why are you reporting this?', style: ts(p.sub, 13)),
+            const SizedBox(height: 6),
+            for (final r in reasons)
+              _SheetRow(r.$1, r.$2, () {
+                Navigator.pop(sheet);
+                s.reportPost(post);
+                toast(c, 'Thanks, we will review this post');
+              }),
           ]),
         ),
       ),
@@ -488,3 +529,4 @@ class _SheetRow extends StatelessWidget {
     );
   }
 }
+

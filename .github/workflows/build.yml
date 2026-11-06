@@ -49,6 +49,9 @@ jobs:
           flutter create --platforms=android --org com.intly --project-name intly .
           rm -rf test
           sed -i 's/android:label="[^"]*"/android:label="Intly"/' android/app/src/main/AndroidManifest.xml
+          # photo access for the custom media picker
+          sed -i 's|<application|<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application|' android/app/src/main/AndroidManifest.xml
+          grep -n "uses-permission" android/app/src/main/AndroidManifest.xml
 
       - name: C++ - build native core (arm64)
         run: |
@@ -76,3 +79,4 @@ jobs:
           name: Intly-arm64-apk
           path: Intly-arm64.apk
           retention-days: 14
+
