@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -53,12 +54,13 @@ class Reel {
   final String id, userId, audioName, caption;
   final String? video; // local file; null = demo reel drawn as animated art
   final String? audio; // optional sound track played with the video
+  final String? poster; // cover image (when known) for profile grids
   final double speed, touch; // playback speed, touch-up strength 0..1
   final int fx, hue, icon, minutes, likes, reposts, saves;
   int comments, shares;
   bool liked = false, saved = false, reposted = false;
   Reel({
-    required this.id, required this.userId, required this.caption, this.video, this.audio,
+    required this.id, required this.userId, required this.caption, this.video, this.audio, this.poster,
     this.audioName = 'Original audio', this.speed = 1, this.touch = 0, this.fx = 0,
     this.hue = 0, this.icon = 0, this.minutes = 0, this.likes = 0, this.comments = 0,
     this.reposts = 0, this.shares = 0, this.saves = 0,
@@ -66,6 +68,27 @@ class Reel {
   int get likeCount => likes + (liked ? 1 : 0);
   int get repostCount => reposts + (reposted ? 1 : 0);
   int get saveCount => saves + (saved ? 1 : 0);
+}
+
+/// A reel saved to drafts: only its author can see it, and it is not in any feed.
+class ReelDraft {
+  final String id, video, audioName, caption;
+  final String? audio, poster;
+  final double speed, touch;
+  final int fx, ts;
+  const ReelDraft({
+    required this.id, required this.video, required this.caption, required this.audioName,
+    required this.speed, required this.touch, required this.fx, required this.ts,
+    this.audio, this.poster,
+  });
+  Reel toReel() => Reel(
+        id: id, userId: 'me', caption: caption, video: video, audio: audio, poster: poster,
+        audioName: audioName, speed: speed, touch: touch, fx: fx,
+      );
+  Map<String, dynamic> toJson() => {
+        'id': id, 'video': video, 'audio': audio, 'poster': poster, 'audioName': audioName,
+        'caption': caption, 'speed': speed, 'touch': touch, 'fx': fx, 'ts': ts,
+      };
 }
 
 class ReelComment {
@@ -105,6 +128,8 @@ class AppState extends ChangeNotifier {
   final List<Reel> reels = [];
   final Map<String, List<ReelComment>> reelComments = {};
   List<dynamic> _myReels = [];
+  List<dynamic> _myDrafts = [];
+  final List<ReelDraft> drafts = []; // newest first, private to me
   List<dynamic> _myReelComments = [];
   final Map<String, bool> flags = {};
   static const _defaults = {
@@ -282,8 +307,10 @@ class AppState extends ChangeNotifier {
       final v = m['video'] as String?;
       if (v == null || !File(v).existsSync()) continue;
       final a = m['audio'] as String?;
+      final po = m['poster'] as String?;
       mineReels.add(Reel(
         id: m['id'], userId: 'me', caption: (m['caption'] ?? '') as String, video: v,
+        poster: (po != null && File(po).existsSync()) ? po : null,
         audio: (a != null && File(a).existsSync()) ? a : null,
         audioName: (m['audioName'] ?? 'Original audio') as String,
         speed: ((m['speed'] ?? 1) as num).toDouble(), touch: ((m['touch'] ?? 0) as num).toDouble(),
@@ -291,6 +318,25 @@ class AppState extends ChangeNotifier {
       ));
     }
     reels.insertAll(0, mineReels.reversed);
+    _myDrafts = jsonDecode(sp.getString('mydrafts') ?? '[]') as List<dynamic>;
+    drafts.clear();
+    _myDrafts.removeWhere((m) {
+      final v = m['video'] as String?;
+      return v == null || !File(v).existsSync();
+    });
+    for (final m in _myDrafts) {
+      final a = m['audio'] as String?;
+      final po = m['poster'] as String?;
+      drafts.add(ReelDraft(
+        id: m['id'], video: m['video'], caption: (m['caption'] ?? '') as String,
+        audioName: (m['audioName'] ?? 'Original audio') as String,
+        speed: ((m['speed'] ?? 1) as num).toDouble(), touch: ((m['touch'] ?? 0) as num).toDouble(),
+        fx: (m['fx'] ?? 0) as int, ts: m['ts'] as int,
+        audio: (a != null && File(a).existsSync()) ? a : null,
+        poster: (po != null && File(po).existsSync()) ? po : null,
+      ));
+    }
+    drafts.sort((a, b) => b.ts.compareTo(a.ts));
     _myReelComments = jsonDecode(sp.getString('myrc') ?? '[]') as List<dynamic>;
     for (final m in _myReelComments) {
       final r = reelById(m['reel'] as String);
@@ -328,6 +374,7 @@ class AppState extends ChangeNotifier {
     await sp.setStringList('confirmed', confirmed.toList());
     await sp.setStringList('declined', declined.toList());
     await sp.setString('myreels', jsonEncode(_myReels));
+    await sp.setString('mydrafts', jsonEncode(_myDrafts));
     await sp.setString('myrc', jsonEncode(_myReelComments));
     await sp.setStringList('rl', reels.where((r) => r.liked).map((r) => r.id).toList());
     await sp.setStringList('rs', reels.where((r) => r.saved).map((r) => r.id).toList());
@@ -420,19 +467,58 @@ class AppState extends ChangeNotifier {
 
   void addReel({
     required String video, String? audio, String audioName = 'Original audio',
-    String caption = '', double speed = 1, int fx = 0, double touch = 0,
+    String caption = '', double speed = 1, int fx = 0, double touch = 0, String? poster,
+    String? id,
   }) {
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final id = 'm$ts';
+    final rid = id ?? 'm$ts';
     _myReels.add({
-      'id': id, 'video': video, 'audio': audio, 'audioName': audioName, 'caption': caption,
-      'speed': speed, 'fx': fx, 'touch': touch, 'ts': ts,
+      'id': rid, 'video': video, 'audio': audio, 'audioName': audioName, 'caption': caption,
+      'speed': speed, 'fx': fx, 'touch': touch, 'ts': ts, 'poster': poster,
     });
     reels.insert(0, Reel(
-      id: id, userId: 'me', caption: caption, video: video, audio: audio, audioName: audioName,
-      speed: speed, fx: fx, touch: touch,
+      id: rid, userId: 'me', caption: caption, video: video, audio: audio, audioName: audioName,
+      speed: speed, fx: fx, touch: touch, poster: poster,
     ));
     _commit();
+  }
+
+  /// Reels posted by [userId] (never drafts).
+  List<Reel> reelsOf(String userId) => reels.where((r) => r.userId == userId).toList();
+
+  /// Save a reel to drafts instead of posting it. Only visible to me.
+  void addDraft({
+    required String video, String? audio, String audioName = 'Original audio',
+    String caption = '', double speed = 1, int fx = 0, double touch = 0, String? poster,
+  }) {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final d = ReelDraft(
+      id: 'd$ts', video: video, audio: audio, poster: poster, audioName: audioName,
+      caption: caption, speed: speed, touch: touch, fx: fx, ts: ts,
+    );
+    drafts.insert(0, d);
+    _myDrafts.add(d.toJson());
+    _commit();
+  }
+
+  void deleteDraft(ReelDraft d) {
+    drafts.removeWhere((x) => x.id == d.id);
+    _myDrafts.removeWhere((m) => m['id'] == d.id);
+    try {
+      final f = File(d.video);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
+    _commit();
+  }
+
+  /// Turn a draft into a real posted reel (the video file is reused, not copied).
+  void postDraft(ReelDraft d) {
+    drafts.removeWhere((x) => x.id == d.id);
+    _myDrafts.removeWhere((m) => m['id'] == d.id);
+    addReel(
+      video: d.video, audio: d.audio, audioName: d.audioName, caption: d.caption,
+      speed: d.speed, fx: d.fx, touch: d.touch, poster: d.poster,
+    );
   }
 
   void deleteReel(Reel r) {
@@ -540,6 +626,8 @@ class AppState extends ChangeNotifier {
       r.reposted = false;
     }
     _myReels = [];
+    _myDrafts = [];
+    drafts.clear();
     _myReelComments = [];
     _mine = [];
     posts.removeWhere((p) => p.userId == 'me');

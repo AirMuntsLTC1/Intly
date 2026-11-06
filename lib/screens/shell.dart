@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme.dart';
@@ -20,7 +21,7 @@ class Shell extends StatelessWidget {
         children: const [
           HomeScreen(), // 0 home
           ExploreScreen(), // 1 explore
-          ExploreScreen(searchOnly: true), // 2 search
+          SizedBox.shrink(), // 2 (unused: search lives inside Explore)
           SizedBox.shrink(), // 3 notifications: opened from the bell on the home screen
           ProfileScreen(userId: 'me', isTab: true), // 4 profile
           ReelsScreen(), // reelsTab (5)
@@ -40,7 +41,7 @@ class _NavBar extends StatelessWidget {
     return Expanded(
       child: Tap(
         onTap: () => c.s.setTab(i),
-        child: Center(child: Icon(icon, size: 26, color: on ? p.accent : p.sub)),
+        child: Center(child: Icon(icon, size: 24, color: on ? p.accent : p.sub)),
       ),
     );
   }
@@ -53,11 +54,10 @@ class _NavBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 60,
+          height: 48,
           child: Row(children: [
             _item(context, LucideIcons.home, 0),
             _item(context, LucideIcons.compass, 1),
-            _item(context, LucideIcons.search, 2),
             _item(context, LucideIcons.clapperboard, reelsTab),
             _item(context, LucideIcons.user, 4),
           ]),

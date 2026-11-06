@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../state.dart';
@@ -5,6 +6,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'edit_profile.dart';
 import 'follow_list.dart';
+import 'reel_viewer.dart';
 import 'settings.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -36,11 +38,13 @@ class _ProfileState extends State<ProfileScreen> {
     final s = context.s;
     final u = s.user(widget.userId);
     final me = u.id == 'me';
-    final tabs = me ? ['Posts', 'Media', 'Saved', 'Likes'] : ['Posts', 'Media'];
+    final tabs = me ? ['Posts', 'Reels', 'Saved', 'Likes'] : ['Posts', 'Reels'];
     final mine = s.postsOf(u.id);
+    // Reels tab: only reels posted by this account (drafts are never in here)
+    final reelList = s.reelsOf(u.id);
     final List<Post> list = switch (_tab) {
       0 => mine,
-      1 => mine.where((x) => x.media >= 0).toList(),
+      1 => const <Post>[],
       2 => s.posts.where((x) => x.saved).toList(),
       _ => s.posts.where((x) => x.liked).toList(),
     };
@@ -155,11 +159,34 @@ class _ProfileState extends State<ProfileScreen> {
               ),
             ]),
           ),
-          if (list.isEmpty)
+          if (_tab == 1) ...[
+            // very first row of your own Reels tab: drafts (only you can see them)
+            if (me) const SliverToBoxAdapter(child: DraftsRow()),
+            if (reelList.isEmpty)
+              const SliverToBoxAdapter(child: Empty(LucideIcons.clapperboard, 'No reels yet'))
+            else
+              SliverPadding(
+                padding: const EdgeInsets.only(top: 2),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3, mainAxisSpacing: 2, crossAxisSpacing: 2, childAspectRatio: .62,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (c, i) => ReelTile(
+                      reelList[i],
+                      key: ValueKey('rt_${reelList[i].id}'),
+                      onTap: () => Navigator.of(context).push(
+                          slide(ReelsViewer(userId: u.id, start: i), name: 'reels:${u.id}')),
+                    ),
+                    childCount: reelList.length,
+                  ),
+                ),
+              ),
+          ] else if (list.isEmpty)
             SliverToBoxAdapter(
               child: Empty(LucideIcons.inbox, const [
                 'No posts yet',
-                'No photos yet',
+                '',
                 'Tap the bookmark on any post to save it here',
                 'Posts you like will show up here',
               ][_tab]),
@@ -193,4 +220,3 @@ class _Round extends StatelessWidget {
         ),
       );
 }
-

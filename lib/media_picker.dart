@@ -1,3 +1,4 @@
+
 import 'dart:collection';
 import 'dart:io';
 import 'dart:typed_data';
@@ -63,29 +64,50 @@ class MediaLibrary extends ChangeNotifier {
     return granted;
   }
 
-  Future<void> ensureLoaded() async {
-    if (ready && !_dirty) return;
+  /// [reset] = true (every time the picker opens) goes back to the "All" album, so the
+  /// grid always shows every video / photo on the device and never just one album.
+  Future<void> ensureLoaded({bool reset = false}) async {
+    if (ready && !_dirty) {
+      if (reset && albums.isNotEmpty && current?.id != albums.first.id) {
+        await selectAlbum(albums.first);
+      }
+      return;
+    }
     final gen = ++_gen;
+    final opt = FilterOptionGroup(
+      orders: [OrderOption(type: OrderOptionType.createDate, asc: false)],
+    );
     final list = await PhotoManager.getAssetPathList(
       type: type,
       onlyAll: false,
-      filterOption: FilterOptionGroup(
-        orders: [OrderOption(type: OrderOptionType.createDate, asc: false)],
-      ),
+      filterOption: opt,
+    );
+    final all = await PhotoManager.getAssetPathList(
+      type: type,
+      onlyAll: true,
+      filterOption: opt,
     );
     if (gen != _gen) return;
-    albums = list;
-    await Future.wait(list.map((a) async {
+    // "All" first, then the other albums
+    final rest = list.where((a) => !a.isAll).toList();
+    final merged = <AssetPathEntity>[
+      if (all.isNotEmpty) all.first else ...list.where((a) => a.isAll),
+      ...rest,
+    ];
+    albums = merged;
+    await Future.wait(merged.map((a) async {
       counts[a.id] = await a.assetCountAsync;
     }));
     if (gen != _gen) return;
     AssetPathEntity? keep;
-    for (final a in list) {
-      if (a.id == current?.id) keep = a;
+    if (!reset) {
+      for (final a in merged) {
+        if (a.id == current?.id) keep = a;
+      }
     }
     _dirty = false;
     ready = true;
-    await selectAlbum(keep ?? (list.isEmpty ? null : list.first));
+    await selectAlbum(keep ?? (merged.isEmpty ? null : merged.first));
   }
 
   Future<void> selectAlbum(AssetPathEntity? a) async {
@@ -206,7 +228,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
       if (_scroll.hasClients && _scroll.position.extentAfter < 1400) lib.loadMore();
     });
     if (lib.granted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => lib.ensureLoaded());
+      WidgetsBinding.instance.addPostFrameCallback((_) => lib.ensureLoaded(reset: true));
     }
   }
 
@@ -219,7 +241,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
   Future<void> _allow() async {
     final ok = await lib.requestAccess();
     if (!mounted) return;
-    if (ok) lib.ensureLoaded();
+    if (ok) lib.ensureLoaded(reset: true);
   }
 
   Future<void> _choose(AssetEntity a) async {
@@ -249,7 +271,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
           decoration: BoxDecoration(color: p.card, borderRadius: BorderRadius.circular(18)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Flexible(
-              child: Text(lib.current?.name ?? 'Recent',
+              child: Text(lib.current == null ? 'All' : (lib.current!.isAll ? (lib.type == RequestType.video ? 'All videos' : 'Recent') : lib.current!.name),
                   maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(p.text, 14, FontWeight.w700)),
             ),
             const SizedBox(width: 4),

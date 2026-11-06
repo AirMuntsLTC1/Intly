@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -256,10 +257,11 @@ class _CamState extends State<ReelCameraScreen> with WidgetsBindingObserver {
     await _openPreview(f.path, owned: false);
   }
 
-  Future<void> _openPreview(String path, {required bool owned}) async {
+  Future<void> _openPreview(String path, {required bool owned, String? poster}) async {
     final done = await Navigator.of(context).push<bool>(slide<bool>(ReelPreviewScreen(
       video: path,
       owned: owned,
+      poster: poster,
       audio: _audio,
       speed: _speed,
       fx: _fx,
@@ -428,7 +430,7 @@ class _CamState extends State<ReelCameraScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     final m = await pickMedia(context, lib: lib);
     if (m == null || m.video == null || !mounted) return;
-    await _openPreview(m.video!, owned: true);
+    await _openPreview(m.video!, owned: true, poster: m.image);
   }
 
   void _openTool(_Tool t) => setState(() => _tool = _tool == t ? _Tool.none : t);
@@ -880,11 +882,12 @@ class _ShutterPainter extends CustomPainter {
 class ReelPreviewScreen extends StatefulWidget {
   final String video;
   final bool owned; // already inside the app's media folder
+  final String? poster; // cover image when the video came from the gallery
   final PickedAudio? audio;
   final double speed, touch;
   final int fx;
   const ReelPreviewScreen({
-    super.key, required this.video, required this.owned, required this.audio,
+    super.key, required this.video, required this.owned, this.poster, required this.audio,
     required this.speed, required this.fx, required this.touch,
   });
   @override
@@ -938,23 +941,29 @@ class _PreviewState extends State<ReelPreviewScreen> {
     super.dispose();
   }
 
+  /// Moves the video into the app's media folder (when it is not there yet).
+  Future<String> _persist() async {
+    String path = widget.video;
+    if (!widget.owned) {
+      final dir = await getApplicationDocumentsDirectory();
+      final d = Directory('${dir.path}/media');
+      if (!d.existsSync()) d.createSync(recursive: true);
+      var ext = path.contains('.') ? path.split('.').last.toLowerCase() : 'mp4';
+      if (ext.isEmpty || ext.length > 5) ext = 'mp4';
+      final copy = await File(path).copy('${d.path}/reel_${DateTime.now().millisecondsSinceEpoch}.$ext');
+      try {
+        await File(path).delete();
+      } catch (_) {}
+      path = copy.path;
+    }
+    return path;
+  }
+
   Future<void> _share() async {
     if (_saving) return;
     setState(() => _saving = true);
     try {
-      String path = widget.video;
-      if (!widget.owned) {
-        final dir = await getApplicationDocumentsDirectory();
-        final d = Directory('${dir.path}/media');
-        if (!d.existsSync()) d.createSync(recursive: true);
-        var ext = path.contains('.') ? path.split('.').last.toLowerCase() : 'mp4';
-        if (ext.isEmpty || ext.length > 5) ext = 'mp4';
-        final copy = await File(path).copy('${d.path}/reel_${DateTime.now().millisecondsSinceEpoch}.$ext');
-        try {
-          await File(path).delete();
-        } catch (_) {}
-        path = copy.path;
-      }
+      final path = await _persist();
       if (!mounted) return;
       context.s.addReel(
         video: path,
@@ -964,6 +973,7 @@ class _PreviewState extends State<ReelPreviewScreen> {
         speed: widget.speed,
         fx: widget.fx,
         touch: widget.touch,
+        poster: widget.poster,
       );
       context.s.setTab(reelsTab);
       toast(context, 'Reel shared');
@@ -975,9 +985,58 @@ class _PreviewState extends State<ReelPreviewScreen> {
     }
   }
 
+  /// Keeps the reel in drafts: only you see it, from Profile > Reels > Drafts.
+  Future<void> _draft() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final path = await _persist();
+      if (!mounted) return;
+      context.s.addDraft(
+        video: path,
+        audio: widget.audio?.path,
+        audioName: widget.audio?.name ?? 'Original audio',
+        caption: _cap.text.trim(),
+        speed: widget.speed,
+        fx: widget.fx,
+        touch: widget.touch,
+        poster: widget.poster,
+      );
+      toast(context, 'Saved to drafts');
+      Navigator.of(context).pop(true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      toast(context, 'Could not save the draft');
+    }
+  }
+
+  Widget _pillBtn(String label, VoidCallback onTap, {required bool filled, IconData? icon}) {
+    final p = context.p;
+    return Tap(
+      onTap: onTap,
+      child: Container(
+        height: 50,
+        decoration: BoxDecoration(
+          gradient: filled ? p.grad : null,
+          color: filled ? null : const Color(0x33FFFFFF),
+          borderRadius: BorderRadius.circular(25),
+          border: filled ? null : Border.all(color: Colors.white54, width: 1.4),
+        ),
+        alignment: Alignment.center,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: Colors.white),
+            const SizedBox(width: 8),
+          ],
+          Text(label, style: ts(Colors.white, 15, FontWeight.w800)),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final p = context.p;
     final v = _v;
     Widget media;
     if (_failed) {
@@ -1073,10 +1132,17 @@ class _PreviewState extends State<ReelPreviewScreen> {
                   ),
                   const SizedBox(height: 14),
                   SizedBox(
-                    width: double.infinity,
+                    height: 50,
                     child: _saving
-                        ? Center(child: CircularProgressIndicator(strokeWidth: 3, color: p.accent))
-                        : GradBtn('Share reel', _share),
+                        ? const Center(child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
+                        : Row(children: [
+                            Expanded(flex: 3, child: _pillBtn('Share reel', _share, filled: true)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 2,
+                              child: _pillBtn('Draft', _draft, filled: false, icon: LucideIcons.fileText),
+                            ),
+                          ]),
                   ),
                 ]),
               ),

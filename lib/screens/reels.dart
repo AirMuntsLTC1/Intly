@@ -1,3 +1,4 @@
+
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:audioplayers/audioplayers.dart';
@@ -185,7 +186,14 @@ class _ReelsState extends State<ReelsScreen> {
 class ReelPage extends StatefulWidget {
   final Reel reel;
   final bool active, near;
-  const ReelPage({super.key, required this.reel, required this.active, required this.near});
+  /// extra space kept free at the bottom (system bar / custom buttons) when shown fullscreen
+  final double bottomInset;
+  /// drafts have no likes / comments: the side action buttons are hidden
+  final bool draft;
+  const ReelPage({
+    super.key, required this.reel, required this.active, required this.near,
+    this.bottomInset = 0, this.draft = false,
+  });
   @override
   State<ReelPage> createState() => _ReelPageState();
 }
@@ -407,7 +415,7 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
   }
 
   Widget _actions(Reel r, AppState s) => Positioned(
-        right: 8, bottom: 14,
+        right: 8, bottom: 14 + widget.bottomInset,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ReactButton(
             shape: Shape.heart, icon: LucideIcons.heart, active: r.liked, size: 30, vertical: true,
@@ -464,7 +472,7 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
     final u = s.user(r.userId);
     final following = s.following.contains(u.id);
     return Positioned(
-      left: 14, right: 84, bottom: 14,
+      left: 14, right: widget.draft ? 14 : 84, bottom: 14 + widget.bottomInset,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         Row(children: [
           Tap(onTap: () => openProfile(context, u.id), child: Avatar(u, 38)),
@@ -570,10 +578,10 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
           },
         ),
         _info(r, s),
-        _actions(r, s),
+        if (!widget.draft) _actions(r, s),
         if (_v != null && _v!.value.isInitialized)
           Positioned(
-            left: 0, right: 0, bottom: 0, height: 3,
+            left: 0, right: 0, bottom: widget.bottomInset, height: 3,
             child: VideoProgressIndicator(
               _v!,
               allowScrubbing: false,
