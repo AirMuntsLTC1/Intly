@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
@@ -68,9 +69,12 @@ class Reel {
 }
 
 class ReelComment {
-  final String reelId, userId, text;
+  final String id, reelId, userId, text;
   final int minutes;
-  const ReelComment(this.reelId, this.userId, this.text, this.minutes);
+  final String? parent; // id of the top-level comment when this is a reply
+  final String? replyToUser; // set when replying to a reply
+  const ReelComment(this.id, this.reelId, this.userId, this.text, this.minutes,
+      {this.parent, this.replyToUser});
 }
 
 class Scope extends InheritedNotifier<AppState> {
@@ -108,6 +112,7 @@ class AppState extends ChangeNotifier {
   };
   late User me;
   SharedPreferences? _p;
+  Timer? _saveTimer;
   List<dynamic> _mine = [];
 
   User user(String id) => users[id] ?? me;
@@ -159,14 +164,28 @@ class AppState extends ChangeNotifier {
       n.type == 'follow' && requests.contains(n.userId) ? 'requested to follow you' : n.text;
   List<Post> postsOf(String id) => posts.where((p) => p.userId == id).toList();
   /// Heart count of a comment/reply (stable demo base + your own heart).
+  /// Stable demo heart count for a seeded comment id.
+  int _baseHearts(String id) {
+    var h = 7;
+    for (final u in id.codeUnits) {
+      h = (h * 31 + u) & 0x7fffffff;
+    }
+    return h % 41;
+  }
+
   int commentLikes(Comment c) {
     final mine = likedComments.contains(c.id) ? 1 : 0;
     if (c.id.startsWith('n')) return mine; // comments written in the app start at 0
-    var h = 7;
-    for (final u in c.id.codeUnits) {
-      h = (h * 31 + u) & 0x7fffffff;
-    }
-    return h % 41 + mine;
+    return _baseHearts(c.id) + mine;
+  }
+
+  /// Heart count of a reel comment (your own comments start at 0).
+  int reelCommentLikes(ReelComment c) =>
+      (c.userId == 'me' ? 0 : _baseHearts(c.id)) + (likedComments.contains(c.id) ? 1 : 0);
+
+  void toggleCommentLikeId(String id) {
+    if (!likedComments.remove(id)) likedComments.add(id);
+    _commit();
   }
 
   void toggleCommentLike(Comment c) {
@@ -219,8 +238,12 @@ class AppState extends ChangeNotifier {
         comments: r['comments'], reposts: r['reposts'], shares: r['shares'], saves: r['saves'],
       ));
     }
+    var rcN = 0;
     for (final c in (raw['reelComments'] as List? ?? const [])) {
-      (reelComments[c['reel']] ??= []).add(ReelComment(c['reel'], c['user'], c['text'], c['minutes']));
+      (reelComments[c['reel']] ??= []).add(ReelComment(
+        (c['id'] as String?) ?? 'rs${rcN++}', c['reel'], c['user'], c['text'], c['minutes'],
+        parent: c['parent'] as String?, replyToUser: c['replyTo'] as String?,
+      ));
     }
     _p = await SharedPreferences.getInstance();
     final sp = _p!;
@@ -274,7 +297,12 @@ class AppState extends ChangeNotifier {
       if (r == null) continue;
       r.comments++;
       (reelComments[r.id] ??= []).insert(
-          0, ReelComment(r.id, 'me', m['text'] as String, ((now - (m['ts'] as int)) / 60000).floor()));
+          0,
+          ReelComment(
+            (m['id'] as String?) ?? 'rc${m['ts']}', r.id, 'me', m['text'] as String,
+            ((now - (m['ts'] as int)) / 60000).floor(),
+            parent: m['parent'] as String?, replyToUser: m['replyTo'] as String?,
+          ));
     }
     final rl = (sp.getStringList('rl') ?? const []).toSet();
     final rs = (sp.getStringList('rs') ?? const []).toSet();
@@ -313,8 +341,10 @@ class AppState extends ChangeNotifier {
   }
 
   void _commit() {
+    // the screen updates at once; the disk write follows a moment later in the background
     notifyListeners();
-    _save();
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 300), _save);
   }
 
   void setTab(int i) {
@@ -375,12 +405,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addReelComment(Reel r, String text) {
+  void addReelComment(Reel r, String text, {String? parent, String? replyToUser}) {
     final t = text.trim();
     if (t.isEmpty) return;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final c = ReelComment('rc$ts', r.id, 'me', t, 0, parent: parent, replyToUser: replyToUser);
     r.comments++;
-    (reelComments[r.id] ??= []).insert(0, ReelComment(r.id, 'me', t, 0));
-    _myReelComments.add({'reel': r.id, 'text': t, 'ts': DateTime.now().millisecondsSinceEpoch});
+    (reelComments[r.id] ??= []).insert(0, c);
+    _myReelComments.add({
+      'id': c.id, 'reel': r.id, 'text': t, 'ts': ts, 'parent': parent, 'replyTo': replyToUser,
+    });
     _commit();
   }
 
@@ -523,4 +557,3 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 }
-

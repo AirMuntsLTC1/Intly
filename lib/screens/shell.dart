@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme.dart';
 import '../widgets.dart';
-import 'compose.dart';
 import 'explore.dart';
 import 'home.dart';
-import 'notifications.dart';
 import 'profile.dart';
 import 'reels.dart';
 import '../reel_fx.dart';
@@ -20,12 +18,12 @@ class Shell extends StatelessWidget {
       body: IndexedStack(
         index: s.tab,
         children: const [
-          HomeScreen(),
-          ExploreScreen(),
-          SizedBox.shrink(),
-          NotificationsScreen(),
-          ProfileScreen(userId: 'me', isTab: true),
-          ReelsScreen(),
+          HomeScreen(), // 0 home
+          ExploreScreen(), // 1 explore
+          ExploreScreen(searchOnly: true), // 2 search
+          SizedBox.shrink(), // 3 notifications: opened from the bell on the home screen
+          ProfileScreen(userId: 'me', isTab: true), // 4 profile
+          ReelsScreen(), // reelsTab (5)
         ],
       ),
       bottomNavigationBar: const _NavBar(),
@@ -36,26 +34,13 @@ class Shell extends StatelessWidget {
 class _NavBar extends StatelessWidget {
   const _NavBar();
 
-  Widget _item(BuildContext c, IconData icon, int i, {int badge = 0}) {
+  Widget _item(BuildContext c, IconData icon, int i) {
     final p = c.p;
     final on = c.s.tab == i;
     return Expanded(
       child: Tap(
         onTap: () => c.s.setTab(i),
-        child: Center(
-          child: Stack(clipBehavior: Clip.none, children: [
-            Icon(icon, size: 26, color: on ? p.accent : p.sub),
-            if (badge > 0)
-              Positioned(
-                right: -9, top: -6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(color: p.danger, borderRadius: BorderRadius.circular(9)),
-                  child: Text('$badge', style: ts(Colors.white, 10, FontWeight.w800)),
-                ),
-              ),
-          ]),
-        ),
+        child: Center(child: Icon(icon, size: 26, color: on ? p.accent : p.sub)),
       ),
     );
   }
@@ -63,7 +48,6 @@ class _NavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.p;
-    final s = context.s;
     return Container(
       decoration: BoxDecoration(color: p.bg, border: Border(top: BorderSide(color: p.line))),
       child: SafeArea(
@@ -73,24 +57,8 @@ class _NavBar extends StatelessWidget {
           child: Row(children: [
             _item(context, LucideIcons.home, 0),
             _item(context, LucideIcons.compass, 1),
-            Expanded(
-              child: Tap(
-                onTap: () async {
-                  final ok = await Navigator.of(context)
-                      .push<bool>(slide<bool>(const ComposeScreen()));
-                  if (ok == true) s.setTab(0);
-                },
-                child: Center(
-                  child: Container(
-                    width: 46, height: 34,
-                    decoration: BoxDecoration(gradient: p.grad, borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(LucideIcons.plus, color: Colors.white, size: 22),
-                  ),
-                ),
-              ),
-            ),
+            _item(context, LucideIcons.search, 2),
             _item(context, LucideIcons.clapperboard, reelsTab),
-            _item(context, LucideIcons.bell, 3, badge: s.unread),
             _item(context, LucideIcons.user, 4),
           ]),
         ),
@@ -98,4 +66,3 @@ class _NavBar extends StatelessWidget {
     );
   }
 }
-

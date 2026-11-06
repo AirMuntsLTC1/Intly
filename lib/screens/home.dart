@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'compose.dart';
+import 'notifications.dart';
 import 'settings.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -29,9 +31,14 @@ class HomeScreen extends StatelessWidget {
                       style: ts(Colors.white, 28, FontWeight.w900).copyWith(letterSpacing: -1)),
                 ),
                 const Spacer(),
+                IconBtn(LucideIcons.plus, () async {
+                  final ok = await Navigator.of(context).push<bool>(slide<bool>(const ComposeScreen()));
+                  if (ok == true) s.setTab(0);
+                }, color: p.accent),
+                _BellBtn(s.unread,
+                    () => Navigator.of(context).push(slide(const NotificationsScreen(back: true)))),
                 IconBtn(p == Pal.dark ? LucideIcons.sun : LucideIcons.moon,
                     () => s.setMode(p == Pal.dark ? 'light' : 'dark')),
-                IconBtn(LucideIcons.search, () => s.setTab(1)),
                 IconBtn(LucideIcons.settings, () => Navigator.of(context).push(slide(const SettingsScreen()))),
                 const SizedBox(width: 6),
               ]),
@@ -113,3 +120,30 @@ class _Stories extends StatelessWidget {
   }
 }
 
+class _BellBtn extends StatelessWidget {
+  final int badge;
+  final VoidCallback onTap;
+  const _BellBtn(this.badge, this.onTap);
+  @override
+  Widget build(BuildContext context) {
+    final p = context.p;
+    return Tap(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Stack(clipBehavior: Clip.none, children: [
+          Icon(LucideIcons.bell, size: 22, color: p.text),
+          if (badge > 0)
+            Positioned(
+              right: -8, top: -6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(color: p.danger, borderRadius: BorderRadius.circular(9)),
+                child: Text('$badge', style: ts(Colors.white, 10, FontWeight.w800)),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+}

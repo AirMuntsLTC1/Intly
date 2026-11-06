@@ -7,7 +7,9 @@ import '../widgets.dart';
 import 'follow_list.dart';
 
 class ExploreScreen extends StatefulWidget {
-  const ExploreScreen({super.key});
+  /// Search-only view (the Search tab): just the search bar until you type.
+  final bool searchOnly;
+  const ExploreScreen({super.key, this.searchOnly = false});
   @override
   State<ExploreScreen> createState() => _ExploreState();
 }
@@ -128,7 +130,11 @@ class _ExploreState extends State<ExploreScreen> {
     final p = context.p;
     final s = context.s;
     final q = _c.text.trim();
-    final items = q.isEmpty ? _discover(p, s) : _results(p, s, q);
+    final List<Widget> items = q.isNotEmpty
+        ? _results(p, s, q)
+        : widget.searchOnly
+            ? <Widget>[const Empty(LucideIcons.search, 'Type a name, word or #tag to search.')]
+            : _discover(p, s);
     return Scaffold(
       backgroundColor: p.bg,
       body: Column(children: [
@@ -208,4 +214,3 @@ class _UserCard extends StatelessWidget {
     );
   }
 }
-

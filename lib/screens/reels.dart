@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:video_player/video_player.dart';
-import '../fx.dart' show Shape, ShapePainter;
+import '../fx.dart' show ReactButton, Shape, ShapePainter;
 import '../reel_fx.dart';
 import '../state.dart';
 import '../theme.dart';
@@ -362,14 +362,6 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
       );
 
   // ---------------------------------------------------------------- actions
-  Widget _heart(Reel r) => r.liked
-      ? CustomPaint(size: const Size(30, 30), painter: ShapePainter(Shape.heart, const Color(0xFFFF3B5C)))
-      : const Icon(LucideIcons.heart, size: 30, color: Colors.white);
-
-  Widget _bookmark(Reel r) => r.saved
-      ? CustomPaint(size: const Size(30, 30), painter: ShapePainter(Shape.bookmark, Colors.white))
-      : const Icon(LucideIcons.bookmark, size: 30, color: Colors.white);
-
   void _comments() {
     final p = context.p;
     showModalBottomSheet<void>(
@@ -417,7 +409,11 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
   Widget _actions(Reel r, AppState s) => Positioned(
         right: 8, bottom: 14,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          _ActBtn(pop: !r.liked, label: compact(r.likeCount), onTap: () => s.toggleReelLike(r), child: _heart(r)),
+          ReactButton(
+            shape: Shape.heart, icon: LucideIcons.heart, active: r.liked, size: 30, vertical: true,
+            color: const Color(0xFFFF3B5C), idle: Colors.white, count: r.likeCount,
+            onTap: () => s.toggleReelLike(r),
+          ),
           _ActBtn(label: compact(r.comments), onTap: _comments,
               child: const Icon(LucideIcons.messageCircle, size: 30, color: Colors.white)),
           _ActBtn(
@@ -438,7 +434,11 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
             },
             child: const Icon(LucideIcons.send, size: 28, color: Colors.white),
           ),
-          _ActBtn(pop: !r.saved, label: compact(r.saveCount), onTap: () => s.toggleReelSave(r), child: _bookmark(r)),
+          ReactButton(
+            shape: Shape.bookmark, icon: LucideIcons.bookmark, active: r.saved, size: 30, vertical: true,
+            color: kSaveColor, idle: Colors.white, count: r.saveCount,
+            onTap: () => s.toggleReelSave(r),
+          ),
           if (r.userId == 'me')
             _ActBtn(onTap: _more, child: const Icon(LucideIcons.moreVertical, size: 26, color: Colors.white)),
           const SizedBox(height: 8),
@@ -645,27 +645,51 @@ class _CommentsSheet extends StatefulWidget {
 
 class _CommentsSheetState extends State<_CommentsSheet> {
   final _c = TextEditingController();
+  final _f = FocusNode();
+  ReelComment? _replyTo;
 
   @override
   void dispose() {
     _c.dispose();
+    _f.dispose();
     super.dispose();
   }
 
-  String _ago(int m) => m < 1 ? 'now' : m < 60 ? '${m}m' : m < 1440 ? '${m ~/ 60}h' : '${m ~/ 1440}d';
+  void _reply(ReelComment c) {
+    setState(() => _replyTo = c);
+    _f.requestFocus();
+  }
 
   void _send() {
-    final t = _c.text.trim();
-    if (t.isEmpty) return;
-    context.s.addReelComment(widget.reel, t);
+    final text = _c.text.trim();
+    if (text.isEmpty) return;
+    final s = context.s;
+    final r = _replyTo;
+    if (r == null) {
+      s.addReelComment(widget.reel, text);
+    } else if (r.parent == null) {
+      s.addReelComment(widget.reel, text, parent: r.id);
+    } else {
+      s.addReelComment(widget.reel, text, parent: r.parent, replyToUser: r.userId);
+    }
     _c.clear();
+    setState(() => _replyTo = null);
   }
 
   @override
   Widget build(BuildContext context) {
     final p = context.p;
     final s = context.s;
-    final list = s.reelComments[widget.reel.id] ?? const <ReelComment>[];
+    final all = s.reelComments[widget.reel.id] ?? const <ReelComment>[];
+    final items = <Widget>[];
+    for (final t in all.where((c) => c.parent == null)) {
+      items.add(_ReelCommentTile(t, widget.reel, 0, () => _reply(t)));
+      // replies sit under their comment, oldest first
+      for (final r in all.where((c) => c.parent == t.id).toList().reversed) {
+        items.add(_ReelCommentTile(r, widget.reel, 1, () => _reply(r)));
+      }
+    }
+    final can = _c.text.trim().isNotEmpty;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SizedBox(
@@ -678,62 +702,137 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           const SizedBox(height: 8),
           Divider(height: 1, color: p.line),
           Expanded(
-            child: list.isEmpty
+            child: items.isEmpty
                 ? const Empty(LucideIcons.messageCircle, 'No comments yet. Be the first!')
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: list.length,
-                    itemBuilder: (c, i) {
-                      final cm = list[i];
-                      final u = s.user(cm.userId);
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Avatar(u, 38),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text.rich(TextSpan(children: [
-                                TextSpan(text: u.id == 'me' ? 'You' : u.name, style: ts(p.text, 14, FontWeight.w700)),
-                                TextSpan(text: '  ${_ago(cm.minutes)}', style: ts(p.sub, 12)),
-                              ])),
-                              const SizedBox(height: 2),
-                              Text(cm.text, style: ts(p.text, 15, FontWeight.w400, 1.35)),
-                            ]),
-                          ),
-                        ]),
-                      );
-                    },
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: items.length,
+                    itemBuilder: (c, i) => items[i],
                   ),
           ),
           Divider(height: 1, color: p.line),
           SafeArea(
             top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-              child: Row(children: [
-                Expanded(
-                  child: Container(
-                    height: 44,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(color: p.card, borderRadius: BorderRadius.circular(22)),
-                    alignment: Alignment.centerLeft,
-                    child: TextField(
-                      controller: _c,
-                      onSubmitted: (_) => _send(),
-                      style: ts(p.text, 15),
-                      cursorColor: p.accent,
-                      textInputAction: TextInputAction.send,
-                      decoration: InputDecoration.collapsed(hintText: 'Add a comment…', hintStyle: ts(p.sub, 15)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (_replyTo != null)
+                Container(
+                  color: p.card,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                  child: Row(children: [
+                    Icon(LucideIcons.reply, size: 16, color: p.accent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Replying to ${s.user(_replyTo!.userId).name}',
+                          style: ts(p.sub, 13, FontWeight.w600)),
+                    ),
+                    Tap(
+                      onTap: () => setState(() => _replyTo = null),
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Icon(LucideIcons.x, size: 18, color: p.sub),
+                      ),
+                    ),
+                  ]),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+                child: Row(children: [
+                  Expanded(
+                    child: Container(
+                      height: 44,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(color: p.card, borderRadius: BorderRadius.circular(22)),
+                      alignment: Alignment.centerLeft,
+                      child: TextField(
+                        controller: _c,
+                        focusNode: _f,
+                        onChanged: (_) => setState(() {}),
+                        onSubmitted: (_) => _send(),
+                        style: ts(p.text, 15),
+                        cursorColor: p.accent,
+                        textInputAction: TextInputAction.send,
+                        decoration: InputDecoration.collapsed(
+                            hintText: _replyTo == null ? 'Add a comment…' : 'Write a reply…',
+                            hintStyle: ts(p.sub, 15)),
+                      ),
                     ),
                   ),
-                ),
-                IconBtn(LucideIcons.send, _send, color: p.accent),
-              ]),
-            ),
+                  IconBtn(LucideIcons.send, _send, color: can ? p.accent : p.sub),
+                ]),
+              ),
+            ]),
           ),
         ]),
       ),
+    );
+  }
+}
+
+/// One comment or reply in the reels comment sheet: reply, Author badge, animated heart.
+class _ReelCommentTile extends StatelessWidget {
+  final ReelComment c;
+  final Reel reel;
+  final int depth;
+  final VoidCallback onReply;
+  const _ReelCommentTile(this.c, this.reel, this.depth, this.onReply);
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.p;
+    final s = context.s;
+    final u = s.user(c.userId);
+    final isAuthor = c.userId == reel.userId;
+    final mention = c.replyToUser == null ? null : s.user(c.replyToUser!);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16 + depth * 44.0, 10, 8, 4),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Tap(onTap: () => openProfile(context, u.id), child: Avatar(u, depth == 0 ? 36 : 28)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Flexible(
+                child: Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: ts(p.text, 14, FontWeight.w700)),
+              ),
+              if (isAuthor) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: p.accent.withAlpha(36), borderRadius: BorderRadius.circular(8)),
+                  child: Text('Author', style: ts(p.accent, 10, FontWeight.w800)),
+                ),
+              ],
+              const SizedBox(width: 6),
+              Text(timeAgo(c.minutes), style: ts(p.sub, 12)),
+            ]),
+            const SizedBox(height: 2),
+            Text.rich(TextSpan(children: [
+              if (mention != null)
+                TextSpan(text: '@${mention.handle} ',
+                    style: TextStyle(color: p.accent, fontWeight: FontWeight.w700)),
+              TextSpan(text: c.text),
+            ]), style: ts(p.text, 15, FontWeight.w400, 1.35)),
+            Tap(
+              onTap: onReply,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text('Reply', style: ts(p.sub, 13, FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ),
+        ReactButton(
+          shape: Shape.heart,
+          icon: LucideIcons.heart,
+          active: s.likedComments.contains(c.id),
+          color: p.danger,
+          idle: p.sub,
+          count: s.reelCommentLikes(c) > 0 ? s.reelCommentLikes(c) : null,
+          onTap: () => s.toggleCommentLikeId(c.id),
+        ),
+      ]),
     );
   }
 }

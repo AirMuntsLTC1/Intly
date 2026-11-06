@@ -5,7 +5,8 @@ import '../theme.dart';
 import '../widgets.dart';
 
 class NotificationsScreen extends StatelessWidget {
-  const NotificationsScreen({super.key});
+  final bool back;
+  const NotificationsScreen({super.key, this.back = false});
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +16,7 @@ class NotificationsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: p.bg,
       body: Column(children: [
-        TopBar('Notifications', actions: [
+        TopBar('Notifications', back: back, actions: [
           IconBtn(LucideIcons.check, s.markAllRead, color: s.unread > 0 ? p.accent : p.sub),
         ]),
         Expanded(
@@ -103,4 +104,3 @@ class _Row extends StatelessWidget {
     );
   }
 }
-
