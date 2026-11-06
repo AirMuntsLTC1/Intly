@@ -3,7 +3,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../state.dart';
 import '../theme.dart';
 import '../widgets.dart';
-import 'detail.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
