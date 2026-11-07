@@ -1,3 +1,4 @@
+
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart'
     show EmojiPicker, Config, EmojiViewConfig, CategoryViewConfig, BottomActionBarConfig;
 import 'package:flutter/material.dart';
@@ -324,4 +325,3 @@ class _ComposeState extends State<ComposeScreen> {
     );
   }
 }
-

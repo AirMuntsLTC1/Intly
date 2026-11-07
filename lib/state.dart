@@ -1,6 +1,8 @@
+
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'data/intly_repository.dart';
 import 'data/local_cache.dart';
@@ -15,6 +17,8 @@ int _minus(Object? total, bool mine) {
   return n < 0 ? 0 : n;
 }
 
+DateTime? _ts(Object? v) => v is String ? DateTime.tryParse(v) : null;
+
 int _ageMinutes(String iso) {
   final m = DateTime.now().toUtc().difference(DateTime.parse(iso).toUtc()).inMinutes;
   return m < 0 ? 0 : m;
@@ -24,6 +28,9 @@ class User {
   final String id;
   String name, handle, bio;
   int hue, followers, following;
+  String? avatar; // local file of the profile photo, when it is on the phone
+  bool isPrivate = false;
+  DateTime? nameChangedAt, usernameChangedAt; // start of the 7-day cooldowns
   User(this.id, this.name, this.handle, this.bio, this.hue, this.followers, this.following);
 }
 
@@ -219,6 +226,7 @@ class AppState extends ChangeNotifier {
 
   final Map<String, String> _idMap = {}; // temporary id -> server id
   final Map<String, _Pending> _ov = {}; // pending changes, by key (see _send)
+  String? _avatarPath; // storage path of your current profile photo
   int _writeSeq = 0;
   RemoteSnapshot? _snap;
   Future<void>? _inFlight;
@@ -276,10 +284,13 @@ class AppState extends ChangeNotifier {
   /// Runs at launch, in parallel with the Supabase connection. It does not wait
   /// for the network: the last saved data appears as soon as it is read.
   Future<void> start() async {
+    final sw = Stopwatch()..start();
     Native.init();
     await MediaCache.init();
     final uid = await LocalCache.lastUid();
     if (uid != null) await _loadCache(uid);
+    debugPrint('Intly startup: native ${Native.initTime.inMilliseconds} ms '
+        '(ok=${Native.ok}), cache ready after ${sw.elapsedMilliseconds} ms');
   }
 
   /// Called when someone signs in: keep showing what is already here, then fetch.
@@ -437,11 +448,36 @@ class AppState extends ChangeNotifier {
         : IntlyRepo.updateSettings({_flagColumns[k]!: v}));
   }
 
-  void updateProfile(String name, String bio) {
-    me.name = name.trim().isEmpty ? 'You' : name.trim();
-    me.bio = bio.trim();
+  /// Saves the profile form. Throws a readable message when the server refuses
+  /// (a 7-day cooldown still running, or a taken @username). Nothing changes on
+  /// screen in that case.
+  Future<void> saveProfile({required String name, required String bio, String? username}) async {
+    final cleanName = name.trim().isEmpty ? 'You' : name.trim();
+    final cleanBio = bio.trim();
+    await IntlyRepo.updateProfile(name: cleanName, bio: cleanBio, username: username);
+    me.name = cleanName;
+    me.bio = cleanBio;
+    if (username != null) me.handle = username;
     notifyListeners();
-    _send(() => IntlyRepo.updateProfile(name: me.name, bio: me.bio));
+    await refresh(); // pulls the new cooldown timestamps from the server
+  }
+
+  /// Shows the new profile photo at once, uploads it in the background, and
+  /// puts the old photo back if the upload fails.
+  void updateAvatar(String localFile) {
+    final before = me.avatar;
+    final oldPath = _avatarPath;
+    me.avatar = localFile;
+    notifyListeners();
+    _sendUpload(() async {
+      final path = await IntlyRepo.uploadAvatar(localFile);
+      await IntlyRepo.setAvatarPath(path);
+      if (oldPath != null) unawaited(IntlyRepo.removeAvatarFile(oldPath));
+      await refresh();
+    }, onFail: () {
+      me.avatar = before;
+      notifyListeners();
+    });
   }
 
   // Posts ----------------------------------------------------------------------
@@ -803,29 +839,45 @@ class AppState extends ChangeNotifier {
 
   // Follows and notifications ----------------------------------------------------
 
+  /// Follow state of [id] for the screens: 'following', 'requested' (a private
+  /// account is waiting for approval) or 'none'.
+  String followStatus(String id) {
+    if (following.contains(id)) return 'following';
+    if (_pendingOut.contains(id)) return 'requested';
+    return 'none';
+  }
+
+  /// Follow or unfollow [id]. The button changes at once; the server confirms
+  /// it in the background, and a refusal puts the button back.
   void toggleFollow(String id) {
-    final on = !(following.contains(id) || _pendingOut.contains(id));
-    if (on) {
-      following.add(id);
+    final turningOn = followStatus(id) == 'none';
+    if (turningOn) {
+      // A private account shows "Requested" straight away, not "Following".
+      if (users[id]?.isPrivate == true) {
+        _pendingOut.add(id);
+      } else {
+        following.add(id);
+      }
     } else {
       following.remove(id);
       _pendingOut.remove(id);
     }
     notifyListeners();
     _send(() async {
-      if (on) {
+      if (turningOn) {
         final status = await IntlyRepo.follow(id);
+        following.remove(id);
+        _pendingOut.remove(id);
         if (status == 'pending') {
-          // private account: the request is waiting, so it is not "following" yet
-          _ov.remove('f:$id');
-          following.remove(id);
           _pendingOut.add(id);
-          notifyListeners();
+        } else {
+          following.add(id);
         }
+        notifyListeners();
       } else {
         await IntlyRepo.unfollow(id);
       }
-    }, key: 'f:$id', value: on);
+    }, key: 'f:$id', value: turningOn);
   }
 
   void confirmRequest(String id) {
@@ -885,10 +937,17 @@ class AppState extends ChangeNotifier {
     users.clear();
     for (final p in s.rows('profiles')) {
       final id = p['id'] as String;
+      final avatarPath = p['avatar_path'] as String?;
+      final avatar = avatarPath == null ? null : MediaCache.peek(IntlyRepo.avatarBucket, avatarPath);
       if (id == uid) {
         me.handle = (p['username'] as String?) ?? me.handle;
         me.name = (p['display_name'] as String?) ?? 'You';
         me.bio = (p['bio'] as String?) ?? '';
+        me.avatar = avatar;
+        me.isPrivate = p['is_private'] == true;
+        me.nameChangedAt = _ts(p['name_changed_at']);
+        me.usernameChangedAt = _ts(p['username_changed_at']);
+        _avatarPath = avatarPath;
         flags['private'] = p['is_private'] == true;
         continue;
       }
@@ -900,7 +959,9 @@ class AppState extends ChangeNotifier {
         (p['accent_hue'] as int?) ?? 262,
         0,
         0,
-      );
+      )
+        ..avatar = avatar
+        ..isPrivate = p['is_private'] == true;
     }
     users['me'] = me;
 
@@ -943,9 +1004,16 @@ class AppState extends ChangeNotifier {
       if (!e.key.startsWith('f:')) continue;
       final id = e.key.substring(2);
       if (e.value.value) {
-        following.add(id);
+        if (!following.contains(id) && !_pendingOut.contains(id)) {
+          if (users[id]?.isPrivate == true) {
+            _pendingOut.add(id);
+          } else {
+            following.add(id);
+          }
+        }
       } else {
         following.remove(id);
+        _pendingOut.remove(id);
       }
     }
 
@@ -1065,7 +1133,8 @@ class AppState extends ChangeNotifier {
       final serverReposted = rReposted.contains(id);
       final videoPath = r['video_path'] as String;
       final audioPath = r['audio_path'] as String?;
-      final posterPath = r['poster_path'] as String?;
+      // The grid shows the thumbnail; older rows fall back to the poster frame.
+      final posterPath = (r['thumbnail_path'] as String?) ?? (r['poster_path'] as String?);
       final reel = Reel(
         id: id,
         userId: local(r['user_id'] as String),
@@ -1137,10 +1206,13 @@ class AppState extends ChangeNotifier {
         want(IntlyRepo.postBucket, m['poster_path'] as String?);
       }
     }
+    for (final p in s.rows('profiles')) {
+      want(IntlyRepo.avatarBucket, p['avatar_path'] as String?);
+    }
     final reelRows = s.rows('reels');
     for (var i = 0; i < reelRows.length; i++) {
       final r = reelRows[i];
-      want(IntlyRepo.reelBucket, r['poster_path'] as String?);
+      want(IntlyRepo.reelBucket, (r['thumbnail_path'] ?? r['poster_path']) as String?);
       want(IntlyRepo.reelBucket, r['audio_path'] as String?);
       if (i < 3) want(IntlyRepo.reelBucket, r['video_path'] as String, video: true);
     }
@@ -1168,7 +1240,7 @@ class AppState extends ChangeNotifier {
   /// Rebuilds the screens from the last snapshot, at most a few times a second
   /// while many files arrive (rebuilding for every file would be slow).
   void _scheduleReapply() {
-    _reapplyTimer ??= Timer(const Duration(milliseconds: 350), () {
+    _reapplyTimer ??= Timer(const Duration(milliseconds: 500), () {
       _reapplyTimer = null;
       final s = _snap;
       if (s == null) return;

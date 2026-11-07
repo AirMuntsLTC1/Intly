@@ -1,3 +1,4 @@
+
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -109,7 +110,7 @@ class _ReactState extends State<ReactButton> with SingleTickerProviderStateMixin
       ),
     );
     if (widget.vertical) {
-      return Tap(
+      return InstantTap(
         onTap: _tap,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
@@ -123,7 +124,7 @@ class _ReactState extends State<ReactButton> with SingleTickerProviderStateMixin
         ),
       );
     }
-    return Tap(
+    return InstantTap(
       onTap: _tap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),

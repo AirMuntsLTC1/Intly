@@ -1,3 +1,4 @@
+
 # Intly
 
 Simple, fast social app. **Flutter** (UI, Lucide icons) + **C++** (native core via FFI) + **Python** (data tooling).
@@ -23,4 +24,3 @@ First build ~6-8 min, cached builds are much faster.
 ## Layout
 - `lib/` Flutter app  - `native/intly_native.cpp` C++ core (hashtags, UTF-8 length, hot ranking)
 - `tools/gen_seed.py` Python demo-data generator  - `.github/workflows/build.yml` CI
-

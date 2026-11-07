@@ -1,3 +1,4 @@
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -257,7 +258,7 @@ class ReelTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.p;
     Widget bg;
-    if (reel.poster != null && File(reel.poster!).existsSync()) {
+    if (reel.poster != null) {
       bg = Image.file(File(reel.poster!), fit: BoxFit.cover, gaplessPlayback: true, cacheWidth: 400);
     } else if (reel.video != null) {
       bg = _VideoFrame(reel.video!);

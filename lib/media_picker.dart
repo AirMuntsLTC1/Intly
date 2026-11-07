@@ -1,5 +1,6 @@
 
 
+
 import 'dart:collection';
 import 'dart:io';
 import 'dart:typed_data';
@@ -463,5 +464,3 @@ class _ThumbState extends State<_Thumb> {
 
   String _dur(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
 }
-
-

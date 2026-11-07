@@ -1,4 +1,7 @@
 
+
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -180,23 +183,38 @@ class Avatar extends StatelessWidget {
   final double size;
   const Avatar(this.user, this.size, {super.key});
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    final fallback = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [hsl(user.hue), hsl(user.hue + 50, .75, .45)],
+        ),
+      ),
+      child: Text(
+        user.name.isEmpty ? '?' : user.name[0].toUpperCase(),
+        style: ts(Colors.white, size * .42, FontWeight.w800),
+      ),
+    );
+    final photo = user.avatar; // already a local file; no disk check during build
+    if (photo == null) return fallback;
+    return ClipOval(
+      child: Image.file(
+        File(photo),
         width: size,
         height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [hsl(user.hue), hsl(user.hue + 50, .75, .45)],
-          ),
-        ),
-        child: Text(
-          user.name.isEmpty ? '?' : user.name[0].toUpperCase(),
-          style: ts(Colors.white, size * .42, FontWeight.w800),
-        ),
-      );
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        cacheWidth: (size * 3).round(),
+        errorBuilder: (_, __, ___) => fallback,
+      ),
+    );
+  }
 }
 
 class GradBtn extends StatelessWidget {
@@ -228,14 +246,22 @@ class FollowBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.p;
     final s = context.s;
-    final on = s.following.contains(userId);
-    return Tap(
+    final status = s.followStatus(userId); // 'following' | 'requested' | 'none'
+    final on = status != 'none';
+    final label = switch (status) {
+      'following' => 'Following',
+      'requested' => 'Requested',
+      _ => 'Follow',
+    };
+    return InstantTap(
       onTap: () => s.toggleFollow(userId),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
         padding: EdgeInsets.symmetric(horizontal: small ? 16 : 22, vertical: small ? 7 : 9),
         decoration: BoxDecoration(
           gradient: on ? null : p.grad,
+          color: on ? p.card : null,
           borderRadius: BorderRadius.circular(20),
           border: on ? Border.all(color: p.line, width: 1.5) : null,
         ),
@@ -245,8 +271,8 @@ class FollowBtn extends StatelessWidget {
             opacity: a,
             child: ScaleTransition(scale: Tween(begin: .92, end: 1.0).animate(a), child: c),
           ),
-          child: Text(on ? 'Following' : 'Follow',
-              key: ValueKey(on),
+          child: Text(label,
+              key: ValueKey(label),
               style: ts(on ? p.text : Colors.white, small ? 13 : 14, FontWeight.w700)),
         ),
       ),
@@ -471,6 +497,7 @@ class PostCard extends StatelessWidget {
               Flexible(child: Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: ts(p.text, 15, FontWeight.w700))),
               const SizedBox(width: 6),
+              if (u.id != 'me') ...[FollowBtn(u.id, small: true), const SizedBox(width: 6)],
               Flexible(child: Text('@${u.handle} · ${timeAgo(post.minutes)}', maxLines: 1,
                   overflow: TextOverflow.ellipsis, style: ts(p.sub, 13))),
               const Spacer(),
@@ -592,5 +619,54 @@ class _SheetRow extends StatelessWidget {
   }
 }
 
+/// A tap that answers the moment the finger lifts. Unlike [Tap] it does not wait
+/// for the gesture arena, so a screen that listens for double taps cannot delay
+/// it. Moving the finger more than a few pixels cancels it, so scrolling past a
+/// button never presses it.
+class InstantTap extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  const InstantTap({super.key, required this.child, this.onTap});
+  @override
+  State<InstantTap> createState() => _InstantTapState();
+}
 
+class _InstantTapState extends State<InstantTap> {
+  Offset? _start;
+  bool _down = false;
 
+  void _set(bool v) {
+    if (_down != v && mounted) setState(() => _down = v);
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (e) {
+          _start = e.localPosition;
+          _set(true);
+        },
+        onPointerMove: (e) {
+          final s = _start;
+          if (s != null && (e.localPosition - s).distance > 12) {
+            _start = null;
+            _set(false);
+          }
+        },
+        onPointerCancel: (_) {
+          _start = null;
+          _set(false);
+        },
+        onPointerUp: (_) {
+          final s = _start;
+          _start = null;
+          _set(false);
+          if (s != null) widget.onTap?.call();
+        },
+        child: AnimatedScale(
+          scale: _down ? 0.93 : 1,
+          duration: const Duration(milliseconds: 90),
+          child: widget.child,
+        ),
+      );
+}

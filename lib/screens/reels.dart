@@ -1,5 +1,7 @@
 
 
+
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:audioplayers/audioplayers.dart';
@@ -260,6 +262,9 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
   bool _paused = false, _expanded = false, _audioStarted = false;
   Duration _lastPos = Duration.zero;
   Offset _burstAt = Offset.zero;
+  Timer? _pendingToggle;
+  DateTime? _lastTapAt;
+  Offset _lastTapPos = Offset.zero;
   late final AnimationController _art =
       AnimationController(vsync: this, duration: const Duration(seconds: 9));
   late final AnimationController _burst =
@@ -279,6 +284,7 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _pendingToggle?.cancel();
     _disposeVideo();
     _a?.dispose();
     _art.dispose();
@@ -393,6 +399,30 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
     _sync();
   }
 
+  /// One tap pauses or plays (after a short wait, in case a second tap follows);
+  /// two quick taps like the reel. There is no double-tap recognizer on the
+  /// surface, so the like buttons and the rest of the screen respond at once.
+  void _surfaceTap(Offset pos) {
+    final now = DateTime.now();
+    final last = _lastTapAt;
+    if (last != null &&
+        now.difference(last) < const Duration(milliseconds: 280) &&
+        (pos - _lastTapPos).distance < 80) {
+      _pendingToggle?.cancel();
+      _pendingToggle = null;
+      _lastTapAt = null;
+      _burstAt = pos;
+      _doubleLike();
+      return;
+    }
+    _lastTapAt = now;
+    _lastTapPos = pos;
+    _pendingToggle?.cancel();
+    _pendingToggle = Timer(const Duration(milliseconds: 280), () {
+      if (mounted) _toggle();
+    });
+  }
+
   void _doubleLike() {
     final s = context.s;
     if (!widget.reel.liked) s.toggleReelLike(widget.reel);
@@ -494,7 +524,11 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
 
   Widget _actions(Reel r, AppState s) => Positioned(
         right: 8, bottom: 14 + widget.bottomInset,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // Absorbs taps on the buttons so the surface does not also pause the reel.
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {},
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
           ReactButton(
             shape: Shape.heart, icon: LucideIcons.heart, active: r.liked, size: 30, vertical: true,
             color: const Color(0xFFFF3B5C), idle: Colors.white, count: r.likeCount,
@@ -543,12 +577,13 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
               ),
             ),
           ),
-        ]),
+        ])),
       );
 
   Widget _info(Reel r, AppState s) {
     final u = s.user(r.userId);
-    final following = s.following.contains(u.id);
+    final status = s.followStatus(u.id);
+    final following = status != 'none';
     return Positioned(
       left: 14, right: widget.draft ? 14 : 84, bottom: 14 + widget.bottomInset,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -564,7 +599,7 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
           ),
           if (u.id != 'me') ...[
             const SizedBox(width: 12),
-            Tap(
+            InstantTap(
               onTap: () => s.toggleFollow(u.id),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
@@ -576,7 +611,7 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
                 ),
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
-                  child: Text(following ? 'Following' : 'Follow',
+                  child: Text(status == 'requested' ? 'Requested' : status == 'following' ? 'Following' : 'Follow',
                       key: ValueKey(following), style: ts(Colors.white, 13, FontWeight.w700)),
                 ),
               ),
@@ -612,9 +647,7 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
     final r = widget.reel;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: _toggle,
-      onDoubleTapDown: (d) => _burstAt = d.localPosition,
-      onDoubleTap: _doubleLike,
+      onTapUp: (d) => _surfaceTap(d.localPosition),
       child: Stack(fit: StackFit.expand, children: [
         _media(r),
         const Positioned(
@@ -703,8 +736,7 @@ class _ActBtnState extends State<_ActBtn> with SingleTickerProviderStateMixin {
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
+  Widget build(BuildContext context) => InstantTap(
         onTap: () {
           if (widget.pop) _c.forward(from: 0);
           widget.onTap();
@@ -927,5 +959,3 @@ class _ReelCommentTile extends StatelessWidget {
     );
   }
 }
-
-

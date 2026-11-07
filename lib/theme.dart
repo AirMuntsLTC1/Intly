@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'state.dart';
 
@@ -44,4 +45,3 @@ class NoGlow extends ScrollBehavior {
   @override
   ScrollPhysics getScrollPhysics(BuildContext c) => const ClampingScrollPhysics();
 }
-

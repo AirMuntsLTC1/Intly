@@ -1,3 +1,4 @@
+
 /// Supabase connection for Intly.
 ///
 /// [anonKey] is the publishable key. It is not stored in this file: the

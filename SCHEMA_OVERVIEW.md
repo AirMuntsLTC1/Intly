@@ -1,3 +1,4 @@
+
 # Intly Supabase schema
 
 The migration at `supabase/migrations/20261107000000_intly_initial_schema.sql`

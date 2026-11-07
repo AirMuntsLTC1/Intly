@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 
 const bgSets = <List<Color>>[
@@ -64,4 +65,3 @@ TextStyle postStyle(int font, Color color, double size) {
     height: 1.35,
   );
 }
-

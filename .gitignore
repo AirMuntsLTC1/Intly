@@ -1,3 +1,4 @@
+
 .dart_tool/
 build/
 .flutter-plugins*
@@ -13,4 +14,3 @@ test/
 .metadata
 *.iml
 .idea/
-

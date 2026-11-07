@@ -950,4 +950,3 @@ revoke all on function public.notify_reel_like() from public, anon, authenticate
 revoke all on function public.notify_new_reel_comment() from public, anon, authenticated;
 revoke all on function public.notify_reel_repost() from public, anon, authenticated;
 revoke all on function public.notify_story_reaction() from public, anon, authenticated;
-

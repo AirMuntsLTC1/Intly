@@ -1,4 +1,5 @@
 
+
 import 'dart:async';
 import 'dart:io';
 
@@ -29,14 +30,17 @@ class IntlyRepo {
   static const postBucket = 'post-media';
   static const reelBucket = 'reel-media';
 
-  static const _profileCols = 'id, username, display_name, bio, accent_hue, is_private';
+  static const avatarBucket = 'avatars';
+
+  static const _profileCols = 'id, username, display_name, bio, accent_hue, is_private, '
+      'avatar_path, name_changed_at, username_changed_at';
   static const _postCols = 'id, user_id, body, background_index, font_index, text_color_index, created_at, '
       'post_media(storage_path, media_type, poster_path, sort_order), '
       'post_stickers(emoji, position_x, position_y, scale, sort_order), '
       'post_likes(count), comments(count), post_shares(count)';
   static const _commentCols =
       'id, post_id, user_id, parent_id, reply_to_user_id, body, created_at, comment_likes(count)';
-  static const _reelCols = 'id, user_id, caption, video_path, audio_path, audio_name, poster_path, '
+  static const _reelCols = 'id, user_id, caption, video_path, audio_path, audio_name, poster_path, thumbnail_path, '
       'playback_speed, touch_strength, effect_index, hue, icon_index, created_at, '
       'reel_likes(count), reel_bookmarks(count), reel_reposts(count), reel_shares(count), reel_comments(count)';
   static const _reelCommentCols =
@@ -68,7 +72,11 @@ class IntlyRepo {
 
   /// A short, user-facing reason for a failed call.
   static String describe(Object e) {
-    if (e is PostgrestException) return e.message;
+    if (e is PostgrestException) {
+      // 23505 = unique violation: the @username is already taken.
+      if (e.code == '23505') return 'That username is taken. Try one of the suggestions.';
+      return e.message;
+    }
     if (e is StorageException) {
       final m = e.message.toLowerCase();
       if (m.contains('exceed') || m.contains('maximum') || e.statusCode == '413') {
@@ -179,8 +187,45 @@ class IntlyRepo {
   // Profile and settings
   // ---------------------------------------------------------------------------
 
-  static Future<void> updateProfile({required String name, required String bio}) async {
-    await _db.from('profiles').update({'display_name': name, 'bio': bio}).eq('id', _uid);
+  /// Saves name and bio, and the @username when [username] is given. The database
+  /// enforces the 7-day cooldowns and throws a readable error when one applies.
+  static Future<void> updateProfile({required String name, required String bio, String? username}) async {
+    await _db.from('profiles').update({
+      'display_name': name,
+      'bio': bio,
+      if (username != null) 'username': username,
+    }).eq('id', _uid);
+  }
+
+  /// True when [candidate] is a valid and free @username.
+  static Future<bool> isUsernameAvailable(String candidate) async {
+    final res = await _db.rpc('is_username_available', params: {'candidate': candidate.toLowerCase()});
+    return res == true;
+  }
+
+  /// Free usernames close to [base] (a name or a username), checked on the server.
+  static Future<List<String>> suggestUsernames(String base, {int wanted = 5}) async {
+    final res = await _db.rpc('suggest_usernames', params: {'base_name': base, 'wanted': wanted});
+    return ((res as List?) ?? const []).map((e) => e.toString()).toList();
+  }
+
+  /// Uploads a new profile photo and returns its storage path.
+  static Future<String> uploadAvatar(String localFile) async {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    return uploadMedia(avatarBucket, '$_uid/avatar_$ts.${_ext(localFile)}', localFile);
+  }
+
+  static Future<void> setAvatarPath(String? path) async {
+    await _db.from('profiles').update({'avatar_path': path}).eq('id', _uid);
+  }
+
+  /// Deletes an old profile photo from storage (best effort).
+  static Future<void> removeAvatarFile(String path) async {
+    try {
+      await _db.storage.from(avatarBucket).remove([path]);
+    } catch (_) {
+      // An orphaned file is harmless; the profile already points at the new one.
+    }
   }
 
   static Future<void> setPrivate(bool value) async {
@@ -306,6 +351,7 @@ class IntlyRepo {
       'video_path': videoPath,
       'audio_path': audioPath,
       'poster_path': posterPath,
+      'thumbnail_path': posterPath,
       'audio_name': audioName,
       'caption': caption,
       'playback_speed': speed,
@@ -374,10 +420,19 @@ class IntlyRepo {
 
   /// Follows [target]. Returns 'pending' when the account is private.
   static Future<String> follow(String target) async {
+    final me = _uid;
+    final to = _id(target);
+    // Idempotent: tapping Follow twice (or on a slow network) must not fail.
+    await _db.from('follows').upsert(
+          {'follower_id': me, 'following_id': to},
+          onConflict: 'follower_id,following_id',
+          ignoreDuplicates: true,
+        );
     final row = await _db
         .from('follows')
-        .insert({'follower_id': _uid, 'following_id': _id(target)})
         .select('status')
+        .eq('follower_id', me)
+        .eq('following_id', to)
         .single();
     return row['status'] as String;
   }
@@ -497,5 +552,3 @@ class IntlyRepo {
         _ => 'application/octet-stream',
       };
 }
-
-

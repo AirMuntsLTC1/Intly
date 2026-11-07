@@ -1,4 +1,5 @@
 
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../state.dart';
@@ -22,14 +23,11 @@ class _ProfileState extends State<ProfileScreen> {
 
   Widget _stat(Pal p, String n, String l, [VoidCallback? onTap]) => Tap(
         onTap: onTap ?? () {},
-        child: Padding(
-          padding: const EdgeInsets.only(right: 22, top: 4, bottom: 4),
-          child: Row(children: [
-            Text(n, style: ts(p.text, 16, FontWeight.w800)),
-            const SizedBox(width: 5),
-            Text(l, style: ts(p.sub, 14)),
-          ]),
-        ),
+        child: Column(children: [
+          Text(n, style: ts(p.text, 16, FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text(l, style: ts(p.sub, 13)),
+        ]),
       );
 
   @override
@@ -55,55 +53,60 @@ class _ProfileState extends State<ProfileScreen> {
         slivers: [
           SliverToBoxAdapter(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Stack(clipBehavior: Clip.none, children: [
-                Container(
-                  height: 160,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [hsl(u.hue, .7, .45), hsl(u.hue + 80, .8, .35)],
+              SizedBox(
+                height: 216,
+                child: Stack(clipBehavior: Clip.none, children: [
+                  Positioned(
+                    top: 0, left: 0, right: 0, height: 160,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [hsl(u.hue, .7, .45), hsl(u.hue + 80, .8, .35)],
+                        ),
+                      ),
+                      child: SafeArea(
+                        bottom: false,
+                        child: Row(children: [
+                          const SizedBox(width: 6),
+                          if (!widget.isTab)
+                            _Round(LucideIcons.arrowLeft, () => Navigator.of(context).maybePop()),
+                          const Spacer(),
+                          if (me)
+                            _Round(LucideIcons.settings,
+                                () => Navigator.of(context).push(slide(const SettingsScreen()))),
+                          const SizedBox(width: 12),
+                        ]),
+                      ),
                     ),
                   ),
-                  child: SafeArea(
-                    bottom: false,
-                    child: Row(children: [
-                      const SizedBox(width: 6),
-                      if (!widget.isTab)
-                        _Round(LucideIcons.arrowLeft, () => Navigator.of(context).maybePop()),
-                      const Spacer(),
-                      if (me)
-                        _Round(LucideIcons.settings,
-                            () => Navigator.of(context).push(slide(const SettingsScreen()))),
-                      const SizedBox(width: 12),
-                    ]),
+                  Positioned(
+                    left: 16, top: 112,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(color: p.bg, shape: BoxShape.circle),
+                      child: Avatar(u, 88),
+                    ),
                   ),
-                ),
-                Positioned(
-                  left: 16, bottom: -42,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: p.bg, shape: BoxShape.circle),
-                    child: Avatar(u, 88),
+                  Positioned(
+                    right: 16, top: 176,
+                    child: me
+                        ? Tap(
+                            onTap: () => Navigator.of(context).push(slide(const EditProfileScreen())),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                              decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: p.line, width: 1.5)),
+                              child: Text('Edit profile', style: ts(p.text, 14, FontWeight.w700)),
+                            ),
+                          )
+                        : FollowBtn(u.id),
                   ),
-                ),
-                Positioned(
-                  right: 16, bottom: -46,
-                  child: me
-                      ? Tap(
-                          onTap: () => Navigator.of(context).push(slide(const EditProfileScreen())),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-                            decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: p.line, width: 1.5)),
-                            child: Text('Edit profile', style: ts(p.text, 14, FontWeight.w700)),
-                          ),
-                        )
-                      : FollowBtn(u.id),
-                ),
-              ]),
-              const SizedBox(height: 54),
+                ]),
+              ),
+              const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -127,9 +130,12 @@ class _ProfileState extends State<ProfileScreen> {
                   ]),
                   const SizedBox(height: 12),
                   Row(children: [
-                    _stat(p, '${mine.length}', 'Posts'),
-                    _stat(p, compact(s.followersOf(u)), 'Followers', () => openFollowList(context, u.id, 0)),
-                    _stat(p, compact(s.followingOf(u)), 'Following', () => openFollowList(context, u.id, 1)),
+                    Expanded(child: _stat(p, '${mine.length}', 'Posts')),
+                    Expanded(child: _stat(p, '${reelList.length}', 'Reels')),
+                    Expanded(child: _stat(p, compact(s.followersOf(u)), 'Followers',
+                        () => openFollowList(context, u.id, 0))),
+                    Expanded(child: _stat(p, compact(s.followingOf(u)), 'Following',
+                        () => openFollowList(context, u.id, 1))),
                   ]),
                 ]),
               ),
