@@ -140,14 +140,13 @@ class SettingsScreen extends StatelessWidget {
         const TopBar('Settings', back: true),
         Expanded(
           child: ListView(padding: EdgeInsets.zero, children: [
-            _head(p, 'Theme (System follows your phone)'),
+            _head(p, 'Theme'),
             ValueListenableBuilder<String>(
               valueListenable: s.mode,
               builder: (c, m, _) => Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: Row(children: [
                   for (final o in const [
-                    ['system', 'System', 0],
                     ['light', 'Light', 1],
                     ['dark', 'Dark', 2],
                   ])

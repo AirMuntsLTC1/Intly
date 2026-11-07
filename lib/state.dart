@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'data/intly_repository.dart';
 import 'data/local_cache.dart';
@@ -191,8 +192,9 @@ class AppState extends ChangeNotifier {
     'activity': 'show_activity',
   };
 
-  /// 'system' (default, follows the phone), 'light' or 'dark'.
-  final mode = ValueNotifier<String>('system');
+  /// 'light' (the app default, for everyone) or 'dark'. The phone's own
+  /// light/dark setting is never used.
+  final mode = ValueNotifier<String>('light');
 
   /// Number of uploads still running (shows a "Posting…" pill).
   final ValueNotifier<int> uploads = ValueNotifier<int>(0);
@@ -383,7 +385,7 @@ class AppState extends ChangeNotifier {
     flags
       ..clear()
       ..addAll(_defaults);
-    mode.value = 'system';
+    mode.value = 'light';
     me.name = 'You';
     me.handle = 'you';
     me.bio = 'Hello Intly 👋';
@@ -997,7 +999,7 @@ class AppState extends ChangeNotifier {
     final settings = s.rows('settings');
     if (settings.isNotEmpty) {
       final r = settings.first;
-      mode.value = (r['theme'] as String?) ?? 'system';
+      mode.value = r['theme'] == 'dark' ? 'dark' : 'light';
       flags['push'] = r['push_notifications'] != false;
       flags['likes'] = r['notify_likes'] != false;
       flags['follows'] = r['notify_follows'] != false;

@@ -1,6 +1,4 @@
 
-import 'dart:ui' show PlatformDispatcher;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -50,10 +48,6 @@ class _IntlyAppState extends State<IntlyApp> with WidgetsBindingObserver {
     messengerKey.currentState?.showSnackBar(SnackBar(content: Text(message)));
   }
 
-  // Phone switched between light/dark: rebuild so "system" mode follows it.
-  @override
-  void didChangePlatformBrightness() => setState(() {});
-
   // Back in the app: pull fresh data in the background.
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
@@ -68,8 +62,8 @@ class _IntlyAppState extends State<IntlyApp> with WidgetsBindingObserver {
       child: ValueListenableBuilder<String>(
         valueListenable: state.mode,
         builder: (context, mode, _) {
-          final sys = PlatformDispatcher.instance.platformBrightness == Brightness.dark;
-          final dark = mode == 'dark' || (mode == 'system' && sys);
+          // Light is the default. The phone's own dark setting is ignored.
+          final dark = mode == 'dark';
           final p = dark ? Pal.dark : Pal.light;
           final icons = dark ? Brightness.light : Brightness.dark;
           SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(

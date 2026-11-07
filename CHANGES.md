@@ -1,3 +1,11 @@
+# Intly 1.3.3 — changes
+
+## 1.3.3
+- Light mode is the default for everyone. The app no longer follows the phone's
+  light or dark setting. Settings now offers Light and Dark only.
+- Database: migration 20261107060000_intly_default_light_theme.sql changes the
+  default to light and converts existing "system" preferences to light.
+
 # Intly 1.3.2 — changes
 
 ## 1.3.2
