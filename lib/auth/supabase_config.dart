@@ -2,19 +2,19 @@
 ///
 /// [url] is your project (Intly-db).
 ///
-/// [anonKey]: paste the anon / publishable key from
-///   Supabase Dashboard > Project Settings > API.
-///   It is public by design and is safe inside the app.
-///   NEVER paste the service_role or secret key here.
+/// [anonKey] is the publishable key. It is not stored in this file: the
+/// build passes it in from the GitHub secret SUPABASE_PUBLISHABLE_KEY
+/// (see .github/workflows/build.yml). It is public by design and safe in the app.
+/// NEVER use the service_role or secret key.
 class SupabaseConfig {
   SupabaseConfig._();
 
   static const String url = 'https://ysjyyhgzhpdtdtrwqqwk.supabase.co';
 
-  static const String anonKey = 'PASTE_YOUR_ANON_KEY_HERE';
+  static const String anonKey = String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
 
   /// Set to true by main.dart once Supabase has started.
   static bool ready = false;
 
-  static bool get keyIsSet => !anonKey.startsWith('PASTE_');
+  static bool get keyIsSet => anonKey.isNotEmpty;
 }
