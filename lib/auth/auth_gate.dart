@@ -56,8 +56,11 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (!SupabaseConfig.ready || !SupabaseConfig.keyIsSet) {
-      return const _SetupNeeded();
+    if (!SupabaseConfig.keyIsSet || !SupabaseConfig.ready) {
+      return _SetupNeeded(
+        keyMissing: !SupabaseConfig.keyIsSet,
+        error: SupabaseConfig.startError,
+      );
     }
     final signedIn = Supabase.instance.client.auth.currentSession != null;
     return signedIn ? const Shell() : const LoginScreen();
@@ -65,7 +68,9 @@ class _AuthGateState extends State<AuthGate> {
 }
 
 class _SetupNeeded extends StatelessWidget {
-  const _SetupNeeded();
+  final bool keyMissing;
+  final String? error;
+  const _SetupNeeded({required this.keyMissing, this.error});
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +78,7 @@ class _SetupNeeded extends StatelessWidget {
     return Scaffold(
       backgroundColor: p.bg,
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(28),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(LucideIcons.info, size: 40, color: p.sub),
@@ -82,10 +87,16 @@ class _SetupNeeded extends StatelessWidget {
                 textAlign: TextAlign.center, style: ts(p.text, 18, FontWeight.w800)),
             const SizedBox(height: 10),
             Text(
-              'Open lib/auth/supabase_config.dart, paste your anon key, then rebuild the app.',
+              keyMissing
+                  ? 'This build has no Supabase key. Check that the GitHub secret SUPABASE_PUBLISHABLE_KEY exists with a value, then rebuild and install the newest APK.'
+                  : 'Supabase could not start in this build.',
               textAlign: TextAlign.center,
               style: ts(p.sub, 15, FontWeight.w500, 1.4),
             ),
+            if (error != null) ...[
+              const SizedBox(height: 14),
+              Text(error!, textAlign: TextAlign.center, style: ts(p.danger, 13, FontWeight.w600, 1.3)),
+            ],
           ]),
         ),
       ),

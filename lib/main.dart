@@ -11,11 +11,14 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  try {
-    await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
-    SupabaseConfig.ready = true;
-  } catch (e) {
-    debugPrint('Supabase start failed: $e');
+  if (SupabaseConfig.keyIsSet) {
+    try {
+      await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
+      SupabaseConfig.ready = true;
+    } catch (e) {
+      SupabaseConfig.startError = e.toString();
+      debugPrint('Supabase start failed: $e');
+    }
   }
   final state = AppState();
   await state.load();

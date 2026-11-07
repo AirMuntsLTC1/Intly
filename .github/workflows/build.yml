@@ -70,6 +70,11 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Check Supabase secret (length only)
+        env:
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: echo "SUPABASE_PUBLISHABLE_KEY length: ${#SUPABASE_ANON_KEY} (0 means the secret is missing)"
+
       - name: Build arm64 release APK
         env:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}

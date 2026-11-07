@@ -1,7 +1,5 @@
 /// Supabase connection for Intly.
 ///
-/// [url] is your project (Intly-db).
-///
 /// [anonKey] is the publishable key. It is not stored in this file: the
 /// build passes it in from the GitHub secret SUPABASE_PUBLISHABLE_KEY
 /// (see .github/workflows/build.yml). It is public by design and safe in the app.
@@ -15,6 +13,9 @@ class SupabaseConfig {
 
   /// Set to true by main.dart once Supabase has started.
   static bool ready = false;
+
+  /// Why Supabase failed to start, if it did (shown on the setup screen).
+  static String? startError;
 
   static bool get keyIsSet => anonKey.isNotEmpty;
 }
