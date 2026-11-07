@@ -1,5 +1,4 @@
 import 'dart:ui' show PlatformDispatcher;
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
