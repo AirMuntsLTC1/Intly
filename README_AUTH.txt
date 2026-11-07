@@ -1,3 +1,4 @@
+
 INTLY - SUPABASE LOGIN UPDATE
 =============================
 
@@ -24,14 +25,15 @@ INSTALL IN TERMUX
    cd ~/intly
    unzip -o ~/storage/downloads/intly_auth_update.zip -d .
 
-2. Paste your anon / publishable key:
+2. The key is NOT pasted into any file. Set it once in GitHub:
 
-   nano lib/auth/supabase_config.dart
+   Repo > Settings > Secrets and variables > Actions > New repository secret
+   Name:  SUPABASE_PUBLISHABLE_KEY
+   Value: the publishable key from Supabase Dashboard > Project Settings > API Keys.
+   Never use the service_role or secret key here.
 
-   Replace PASTE_YOUR_ANON_KEY_HERE with the key from
-   Supabase Dashboard > Project Settings > API.
-   Use the "anon" key (starts with eyJ) if you can, or the publishable key.
-   Never use the service_role or secret key.
+   The build reads it automatically. In the build log, the step
+   "Check Supabase secret (length only)" prints the length (0 means it is missing).
 
 3. Check that the database migrations are applied to the linked project:
 
@@ -66,3 +68,7 @@ NOTES
 * The sign-up screen tells the user when a username is taken. That reveals which
   usernames exist. This is a small trade-off, and it can be removed if you prefer.
 * Never commit lib/auth/supabase_config.dart with a service_role or secret key.
+
+
+
+======================================================================

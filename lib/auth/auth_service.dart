@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -31,7 +32,7 @@ class AuthService {
   /// Calls the email-code-auth Edge Function (login, sign-up codes, password reset).
   static Future<Map<String, dynamic>> _call(Map<String, dynamic> body) async {
     if (!SupabaseConfig.keyIsSet) {
-      throw const AuthFailure('Add your Supabase key in lib/auth/supabase_config.dart first.');
+      throw const AuthFailure('This app build has no Supabase key. Add the GitHub secret SUPABASE_PUBLISHABLE_KEY and rebuild.');
     }
     final http = HttpClient()..connectionTimeout = const Duration(seconds: 20);
     try {
@@ -152,6 +153,7 @@ class CloudSync {
   final AppState state;
   Timer? _debounce;
   bool _applying = false;
+  bool _loaded = false; // true only after the server profile was read successfully
   String? _last;
   String? _userId;
 
@@ -168,6 +170,7 @@ class CloudSync {
 
   void start(String userId) {
     _userId = userId;
+    _loaded = false;
     state.addListener(_onChanged);
     _pull();
   }
@@ -177,10 +180,16 @@ class CloudSync {
     state.removeListener(_onChanged);
     _userId = null;
     _last = null;
+    _loaded = false;
   }
 
   void _onChanged() {
     if (_applying || _userId == null) return;
+    if (!_loaded) {
+      // Never push local values before the server values are known.
+      _pull();
+      return;
+    }
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 900), _push);
   }
@@ -225,6 +234,7 @@ class CloudSync {
         _applying = false;
       }
       _last = _snapshot();
+      _loaded = true;
     } catch (e) {
       debugPrint('Profile sync (load) failed: $e');
     }
@@ -255,3 +265,7 @@ class CloudSync {
     }
   }
 }
+
+
+
+======================================================================

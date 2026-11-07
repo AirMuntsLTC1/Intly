@@ -350,7 +350,7 @@ serve(async (req) => {
         const { data: existing } = await admin
           .from("profiles")
           .select("id")
-          .ilike("username", username)
+          .eq("username", username)
           .limit(1);
 
         if (existing && existing.length > 0) {
