@@ -449,12 +449,16 @@ class _SignInState extends State<SignInScreen> {
     } catch (_) {
       err = 'Could not log in. Please try again.';
     }
-    if (mounted) {
-      setState(() {
-        _busy = false;
-        _error = err;
-      });
+    if (!mounted) return;
+    if (err == null) {
+      // Signed in: close the login pages and show home.
+      Navigator.of(context).popUntil((r) => r.isFirst);
+      return;
     }
+    setState(() {
+      _busy = false;
+      _error = err;
+    });
   }
 
   @override

@@ -53,7 +53,13 @@ class MediaLibrary extends ChangeNotifier {
   final Map<String, int> counts = {};
   AssetPathEntity? current;
   final List<AssetEntity> assets = [];
-  bool granted = false, ready = false, loading = false, hasMore = true;
+  /// Permission is shared by every library of the same kind, so one grant
+  /// (photos and videos together) covers the composer, profile picture and reels.
+  static final Map<RequestType, bool> _access = {};
+  RequestType get _permission => type == RequestType.audio ? RequestType.audio : RequestType.common;
+  bool get granted => _access[_permission] ?? false;
+
+  bool ready = false, loading = false, hasMore = true;
 
   bool _dirty = false, _watching = false;
   int _gen = 0, _next = 0;
@@ -67,14 +73,16 @@ class MediaLibrary extends ChangeNotifier {
         _ => true,
       };
 
-  /// Shows the system permission dialog when access has not been granted yet.
+  /// Asks for access only when it has not been given yet. Once granted it returns
+  /// at once, so the system dialog never appears again for the same permission.
   Future<bool> requestAccess() async {
+    if (granted) return true;
     final st = await PhotoManager.requestPermissionExtend(
       requestOption: PermissionRequestOption(
-        androidPermission: AndroidPermission(type: type, mediaLocation: false),
+        androidPermission: AndroidPermission(type: _permission, mediaLocation: false),
       ),
     );
-    granted = st.hasAccess;
+    _access[_permission] = st.hasAccess;
     if (granted && !_watching) {
       _watching = true;
       // a new photo was taken / deleted: refresh quietly the next time the picker opens
@@ -254,9 +262,11 @@ class _MediaPickerState extends State<MediaPickerScreen> {
     _scroll.addListener(() {
       if (_scroll.hasClients && _scroll.position.extentAfter < 1400) lib.loadMore();
     });
-    if (lib.granted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => lib.ensureLoaded(reset: true));
-    }
+    // Opens straight to the photos when access is already allowed; asks only if not.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final ok = lib.granted || await lib.requestAccess();
+      if (mounted && ok) lib.ensureLoaded(reset: true);
+    });
   }
 
   @override

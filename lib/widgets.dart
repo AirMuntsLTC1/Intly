@@ -31,8 +31,8 @@ String compact(int n) => n >= 1000 ? '${(n / 1000).toStringAsFixed(n >= 10000 ? 
 Route<T> slide<T>(Widget page, {String? name}) => PageRouteBuilder<T>(
       settings: RouteSettings(name: name),
       opaque: true,
-      transitionDuration: const Duration(milliseconds: 220),
-      reverseTransitionDuration: const Duration(milliseconds: 180),
+      transitionDuration: const Duration(milliseconds: 320),
+      reverseTransitionDuration: const Duration(milliseconds: 260),
       pageBuilder: (_, __, ___) => page,
       transitionsBuilder: (_, a, __, child) {
         final t = CurvedAnimation(parent: a, curve: Curves.easeOutCubic);

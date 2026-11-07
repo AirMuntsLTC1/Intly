@@ -1,3 +1,17 @@
+# Intly 1.3.8 — changes
+
+## 1.3.8
+- Sign-in lands on the home screen. Sign-up and password reset also close their
+  pages and show home. Going back no longer returns to a login page.
+- Photo permission: all media pickers now ask for photos and videos together.
+  Before, the reels screen asked only for videos, so the composer could only
+  offer videos and posts came out as videos.
+- The picker asks for permission only when it has not been given yet. It no
+  longer shows the "Allow access" card and the system dialog every time.
+- Profile picture: the picker opens on your photos (photos only).
+- Tab switching is animated (fade and slide). Each tab keeps its scroll position.
+  Screen transitions are slightly longer and smoother.
+
 # Intly 1.3.7 — changes
 
 ## 1.3.7

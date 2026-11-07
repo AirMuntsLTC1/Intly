@@ -52,9 +52,18 @@ class _AuthGateState extends State<AuthGate> {
         widget.state.onSignedOut();
       } else {
         widget.state.onSignedIn();
+        _showHome();
       }
     }
     if (mounted) setState(() {});
+  }
+
+  /// After signing in, close any login, sign-up or reset page that is still open,
+  /// so the person lands on the home screen.
+  void _showHome() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+    });
   }
 
   @override
