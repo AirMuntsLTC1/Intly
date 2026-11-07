@@ -1,3 +1,10 @@
+# Intly 1.3.7 — changes
+
+## 1.3.7
+- Home feed: a "Suggestions People" strip appears after every 6 posts while you
+  scroll, using the same cards as your profile. Nothing shows when there are no
+  suggestions.
+
 # Intly 1.3.6 — changes
 
 ## 1.3.6

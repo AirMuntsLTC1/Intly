@@ -6,6 +6,21 @@ import '../widgets.dart';
 import 'compose.dart';
 import 'notifications.dart';
 import 'settings.dart';
+import 'suggestions.dart';
+
+/// A suggestions strip appears after every this many posts.
+const _suggestEvery = 6;
+
+/// Feed rows: the stories bar, then the posts, with a suggestions strip after
+/// every [_suggestEvery] posts. Values: -1 = stories, -2 = suggestions, n >= 0 = post n.
+List<int> _feedRows(int postCount) {
+  final rows = <int>[-1];
+  for (var i = 0; i < postCount; i++) {
+    rows.add(i);
+    if ((i + 1) % _suggestEvery == 0 && i + 1 < postCount) rows.add(-2);
+  }
+  return rows;
+}
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -50,10 +65,18 @@ class HomeScreen extends StatelessWidget {
           child: ListView.builder(
             padding: EdgeInsets.zero,
             cacheExtent: 900,
-            itemCount: posts.length + 1,
-            itemBuilder: (c, i) => i == 0
-                ? const _Stories()
-                : PostCard(posts[i - 1], key: ValueKey(posts[i - 1].id)),
+            itemCount: _feedRows(posts.length).length,
+            itemBuilder: (c, i) {
+              final r = _feedRows(posts.length)[i];
+              if (r == -1) return const _Stories();
+              if (r == -2) {
+                return Container(
+                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: p.line))),
+                  child: const SuggestionsStrip(hideIfEmpty: true),
+                );
+              }
+              return PostCard(posts[r], key: ValueKey(posts[r].id));
+            },
           ),
         ),
       ]),

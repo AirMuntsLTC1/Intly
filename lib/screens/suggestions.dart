@@ -67,12 +67,16 @@ class _MutualFaces extends StatelessWidget {
 /// Profile section under Posts / Reels / Followers / Following: the first 10
 /// suggestions, scrollable sideways, with a See all link.
 class SuggestionsStrip extends StatelessWidget {
-  const SuggestionsStrip({super.key});
+  /// In the home feed, show nothing rather than an empty message when there is
+  /// nobody to suggest yet.
+  final bool hideIfEmpty;
+  const SuggestionsStrip({super.key, this.hideIfEmpty = false});
 
   @override
   Widget build(BuildContext context) {
     final p = context.p;
     final top = suggestionsFor(context.s).take(10).toList();
+    if (top.isEmpty && hideIfEmpty) return const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
