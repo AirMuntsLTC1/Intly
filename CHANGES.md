@@ -1,3 +1,12 @@
+# Intly 1.3.4 — changes
+
+## 1.3.4
+- New welcome screen: Intly wordmark, three swipeable taglines that move on by
+  themselves, and two buttons: Create account and Sign in. No logo or icon badges.
+- Sign in, create account and forgot password use the same simpler layout, with
+  floating labels, a brand-colour focus border, and friendlier wording.
+- Sign-in, sign-up, email code and password reset work as before.
+
 # Intly 1.3.3 — changes
 
 ## 1.3.3
