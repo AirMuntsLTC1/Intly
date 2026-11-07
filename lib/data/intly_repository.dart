@@ -210,6 +210,20 @@ class IntlyRepo {
     return ((res as List?) ?? const []).map((e) => e.toString()).toList();
   }
 
+  /// How many OTHER visible accounts already use this display name. Names do not
+  /// have to be unique, so this only drives a notice in the edit screen.
+  static Future<int> countUsersWithName(String name) async {
+    // Escape LIKE wildcards so the name is matched literally.
+    final safe = name.trim().replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
+    final rows = await _db
+        .from('profiles')
+        .select('id')
+        .ilike('display_name', safe)
+        .neq('id', _uid)
+        .limit(5);
+    return (rows as List).length;
+  }
+
   /// Uploads a new profile photo and returns its storage path.
   static Future<String> uploadAvatar(String localFile) async {
     final ts = DateTime.now().millisecondsSinceEpoch;

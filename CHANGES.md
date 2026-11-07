@@ -1,3 +1,15 @@
+# Intly 1.3.2 — changes
+
+## 1.3.2
+- Profile photo picker shows photos only. Post composer shows photos and videos.
+  Reels picker shows videos only. Each picker has its own media library, so one
+  kind of permission can no longer hide the other kind.
+- Edit profile: username suggestions appear automatically as you type (checked on
+  the server, so each one is free). The availability check says when a username
+  is already taken.
+- Edit profile: a notice (not a block) when another account already uses the same
+  display name, since names do not have to be unique.
+
 # Intly 1.3.1 — changes
 
 ## 1.3.1

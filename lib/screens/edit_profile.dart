@@ -32,12 +32,17 @@ class _EditState extends State<EditProfileScreen> {
   TextEditingController? _n, _u, _b;
   bool _init = false;
   bool _saving = false;
-  Timer? _debounce;
+
+  Timer? _usernameDebounce, _nameDebounce;
   String _checked = ''; // the username the last availability answer is about
   bool? _available;
   bool _checking = false;
-  bool _loadingIdeas = false;
+
   List<String> _ideas = const [];
+  bool _loadingIdeas = false;
+
+  String _nameNoticeFor = ''; // the name the notice below was computed for
+  int _sameNameCount = 0;
 
   @override
   void didChangeDependencies() {
@@ -53,7 +58,8 @@ class _EditState extends State<EditProfileScreen> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
+    _usernameDebounce?.cancel();
+    _nameDebounce?.cancel();
     _n?.dispose();
     _u?.dispose();
     _b?.dispose();
@@ -63,21 +69,26 @@ class _EditState extends State<EditProfileScreen> {
   String get _userText =>
       (_u?.text ?? '').trim().toLowerCase().replaceFirst(RegExp(r'^@'), '');
 
+  // ---------------------------------------------------------------- username
+
+  /// Runs every time the username changes: availability check and suggestions.
   void _onUsernameChanged(String _) {
-    _debounce?.cancel();
+    _usernameDebounce?.cancel();
     final v = _userText;
     setState(() {
       _checked = '';
       _available = null;
       _checking = false;
+      if (v.isEmpty) _ideas = const [];
     });
     if (!Native.validUsername(v) || v == context.s.me.handle) return;
-    _debounce = Timer(const Duration(milliseconds: 380), () => _check(v));
+    _usernameDebounce = Timer(const Duration(milliseconds: 380), () => _check(v));
   }
 
   Future<void> _check(String v) async {
     if (!mounted) return;
     setState(() => _checking = true);
+    unawaited(_loadIdeas(v)); // suggestions appear automatically, next to the check
     try {
       final ok = await IntlyRepo.isUsernameAvailable(v);
       if (!mounted || _userText != v) return;
@@ -86,12 +97,13 @@ class _EditState extends State<EditProfileScreen> {
         _checked = v;
         _checking = false;
       });
-      if (!ok) _loadIdeas(v);
     } catch (_) {
       if (mounted) setState(() => _checking = false);
     }
   }
 
+  /// Free usernames near [base], checked on the server. Falls back to the
+  /// offline C++ generator when the network is unavailable.
   Future<void> _loadIdeas(String base) async {
     if (!mounted) return;
     setState(() => _loadingIdeas = true);
@@ -101,7 +113,6 @@ class _EditState extends State<EditProfileScreen> {
     } catch (_) {
       list = const [];
     }
-    // Offline, or the server returned nothing: use the C++ generator.
     if (list.isEmpty) list = Native.usernameHints(base);
     if (!mounted) return;
     setState(() {
@@ -118,8 +129,34 @@ class _EditState extends State<EditProfileScreen> {
     _onUsernameChanged(idea);
   }
 
+  // -------------------------------------------------------------------- name
+
+  /// A notice, not a block: display names do not have to be unique.
+  void _onNameChanged(String _) {
+    _nameDebounce?.cancel();
+    final v = (_n?.text ?? '').trim();
+    setState(() {
+      _nameNoticeFor = '';
+      _sameNameCount = 0;
+    });
+    if (v.isEmpty || v == context.s.me.name) return;
+    _nameDebounce = Timer(const Duration(milliseconds: 450), () async {
+      try {
+        final n = await IntlyRepo.countUsersWithName(v);
+        if (!mounted || (_n?.text ?? '').trim() != v) return;
+        setState(() {
+          _nameNoticeFor = v;
+          _sameNameCount = n;
+        });
+      } catch (_) {}
+    });
+  }
+
+  // -------------------------------------------------------------- avatar/save
+
   Future<void> _pickAvatar(AppState s) async {
-    final m = await pickMedia(context, lib: MediaLibrary.I);
+    // Profile pictures: photos only.
+    final m = await pickMedia(context, lib: MediaLibrary.P);
     if (m == null || !mounted) return;
     if (m.video != null) {
       toast(context, 'Choose a photo for your profile picture');
@@ -154,7 +191,7 @@ class _EditState extends State<EditProfileScreen> {
         return;
       }
       if (_checked != user || _available != true) {
-        toast(context, 'Wait for the username check, or pick a suggestion');
+        toast(context, 'That username is taken or still being checked. Pick a suggestion.');
         return;
       }
     }
@@ -170,6 +207,8 @@ class _EditState extends State<EditProfileScreen> {
     }
   }
 
+  // ------------------------------------------------------------------ widgets
+
   Widget _field({
     required Pal p,
     required String label,
@@ -178,7 +217,6 @@ class _EditState extends State<EditProfileScreen> {
     required int maxLen,
     bool enabled = true,
     String? prefix,
-    String? hint,
     ValueChanged<String>? onChanged,
     Widget? helper,
   }) =>
@@ -206,7 +244,7 @@ class _EditState extends State<EditProfileScreen> {
                   style: ts(enabled ? p.text : p.sub, 16),
                   cursorColor: p.accent,
                   buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                  decoration: InputDecoration.collapsed(hintText: hint),
+                  decoration: const InputDecoration.collapsed(hintText: null),
                 ),
               ),
             ]),
@@ -229,19 +267,35 @@ class _EditState extends State<EditProfileScreen> {
     if (_available == true) {
       return _note(p, '✓ @$v is available', color: const Color(0xFF2EC27E), bold: true);
     }
-    return _note(p, '@$v is taken', color: p.danger, bold: true);
+    return _note(p, '@$v is already taken', color: p.danger, bold: true);
   }
 
+  Widget _nameNotice(Pal p) {
+    final typed = (_n?.text ?? '').trim();
+    if (_sameNameCount == 0 || _nameNoticeFor != typed) return const SizedBox.shrink();
+    return _note(
+      p,
+      _sameNameCount == 1
+          ? 'Another account already uses this name. You can still keep it.'
+          : '$_sameNameCount other accounts already use this name. You can still keep it.',
+    );
+  }
+
+  /// Suggestions appear as soon as the username has a valid value. They are
+  /// checked on the server, so each one is free to use.
   Widget _ideasBox(Pal p) {
-    final typedName = _n?.text.trim() ?? '';
-    final base = typedName.isNotEmpty ? typedName : _userText;
+    final typedUser = _userText;
+    final base = Native.validUsername(typedUser)
+        ? typedUser
+        : (_n?.text.trim() ?? '');
+    if (_ideas.isEmpty && !_loadingIdeas) return const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        Text('Suggestions', style: ts(p.sub, 13, FontWeight.w700)),
+        Text('Available suggestions', style: ts(p.sub, 13, FontWeight.w700)),
         const Spacer(),
         Tap(
           onTap: base.isEmpty || _loadingIdeas ? null : () => _loadIdeas(base),
-          child: Text(_loadingIdeas ? 'Loading…' : 'Get suggestions',
+          child: Text(_loadingIdeas ? 'Loading…' : 'Refresh',
               style: ts(p.accent, 13, FontWeight.w700)),
         ),
       ]),
@@ -318,12 +372,16 @@ class _EditState extends State<EditProfileScreen> {
               lines: 1,
               maxLen: 40,
               enabled: nameLeft == null,
-              helper: _note(
-                p,
-                nameLeft == null
-                    ? 'You can change your name once every 7 days.'
-                    : 'Name locked. You can change it again in $nameLeft day${nameLeft == 1 ? '' : 's'}.',
-              ),
+              onChanged: _onNameChanged,
+              helper: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _note(
+                  p,
+                  nameLeft == null
+                      ? 'You can change your name once every 7 days.'
+                      : 'Name locked. You can change it again in $nameLeft day${nameLeft == 1 ? '' : 's'}.',
+                ),
+                if (nameLeft == null) _nameNotice(p),
+              ]),
             ),
             _field(
               p: p,

@@ -26,6 +26,12 @@ class PickedMedia {
 Future<PickedMedia?> pickMedia(BuildContext c, {MediaLibrary? lib}) => Navigator.of(c)
     .push<PickedMedia>(slide<PickedMedia>(MediaPickerScreen(lib: lib ?? MediaLibrary.I)));
 
+String _pickerTitle(RequestType t) => switch (t) {
+      RequestType.video => 'Select video',
+      RequestType.image => 'Select photo',
+      _ => 'Select media',
+    };
+
 /// Session-wide gallery cache: albums, pages of assets and thumbnails are kept in
 /// memory, so re-opening the picker or scrolling back never reloads anything.
 class MediaLibrary extends ChangeNotifier {
@@ -34,6 +40,8 @@ class MediaLibrary extends ChangeNotifier {
   static final MediaLibrary I = MediaLibrary._(RequestType.common);
   /// videos only (reels)
   static final MediaLibrary V = MediaLibrary._(RequestType.video);
+  /// photos only (profile picture)
+  static final MediaLibrary P = MediaLibrary._(RequestType.image);
   /// audio files on the device (reel sounds)
   static final MediaLibrary A = MediaLibrary._(RequestType.audio);
   final RequestType type;
@@ -51,6 +59,13 @@ class MediaLibrary extends ChangeNotifier {
   int _gen = 0, _next = 0;
   final LinkedHashMap<String, Uint8List> _thumbs = LinkedHashMap();
   final Map<String, Future<Uint8List?>> _pending = {};
+
+  /// Each library only keeps the kind of asset it is for: photos, videos, or both.
+  bool _accepts(AssetEntity a) => switch (type) {
+        RequestType.image => a.type == AssetType.image,
+        RequestType.video => a.type == AssetType.video,
+        _ => true,
+      };
 
   /// Shows the system permission dialog when access has not been granted yet.
   Future<bool> requestAccess() async {
@@ -136,9 +151,7 @@ class MediaLibrary extends ChangeNotifier {
     try {
       list = await a.getAssetListPaged(page: _next, size: _pageSize);
       // the reels picker shows videos only, even if the album holds photos too
-      if (type == RequestType.video) {
-        list = list.where((x) => x.type == AssetType.video).toList();
-      }
+      list = list.where(_accepts).toList();
     } catch (_) {}
     if (gen != _gen) return;
     loading = false;
@@ -285,7 +298,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
           decoration: BoxDecoration(color: p.card, borderRadius: BorderRadius.circular(18)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Flexible(
-              child: Text(lib.current == null ? 'All' : (lib.current!.isAll ? (lib.type == RequestType.video ? 'All videos' : 'Recent') : lib.current!.name),
+              child: Text(lib.current == null ? 'All' : (lib.current!.isAll ? (lib.type == RequestType.video ? 'All videos' : lib.type == RequestType.image ? 'All photos' : 'Recent') : lib.current!.name),
                   maxLines: 1, overflow: TextOverflow.ellipsis, style: ts(p.text, 14, FontWeight.w700)),
             ),
             const SizedBox(width: 4),
@@ -385,7 +398,7 @@ class _MediaPickerState extends State<MediaPickerScreen> {
       body: ListenableBuilder(
         listenable: lib,
         builder: (context, _) => Column(children: [
-          TopBar(lib.type == RequestType.video ? 'Select video' : 'Select media', back: true, actions: [if (lib.granted) _pill(p)]),
+          TopBar(_pickerTitle(lib.type), back: true, actions: [if (lib.granted) _pill(p)]),
           Expanded(
             child: Stack(children: [
               Positioned.fill(child: _grid(p)),
