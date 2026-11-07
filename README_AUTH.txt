@@ -1,6 +1,5 @@
 
 INTLY - SUPABASE LOGIN UPDATE
-=============================
 
 WHAT THIS UPDATE ADDS
 ---------------------
@@ -68,7 +67,3 @@ NOTES
 * The sign-up screen tells the user when a username is taken. That reveals which
   usernames exist. This is a small trade-off, and it can be removed if you prefer.
 * Never commit lib/auth/supabase_config.dart with a service_role or secret key.
-
-
-
-======================================================================
