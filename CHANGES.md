@@ -1,4 +1,12 @@
-# Intly 1.3.0 — changes
+# Intly 1.3.1 — changes
+
+## 1.3.1
+- Follow button in the post header moved to the top-right corner, beside the menu.
+- Liking, saving, reposting, sharing, commenting or deleting a reel while it is still
+  uploading no longer sends the temporary id to the database ("invalid input syntax
+  for type uuid"). Those writes wait for the upload to finish.
+
+## 1.3.0
 
 ## Fixed
 - Follow button on other users' profiles could not be tapped: it sat outside the

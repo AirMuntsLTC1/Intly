@@ -226,6 +226,8 @@ class AppState extends ChangeNotifier {
 
   final Map<String, String> _idMap = {}; // temporary id -> server id
   final Map<String, _Pending> _ov = {}; // pending changes, by key (see _send)
+  // Temporary reel id -> the server id, once its upload has finished.
+  final Map<String, Future<String>> _reelReady = {};
   String? _avatarPath; // storage path of your current profile photo
   int _writeSeq = 0;
   RemoteSnapshot? _snap;
@@ -377,6 +379,7 @@ class AppState extends ChangeNotifier {
     reelComments.clear();
     drafts.clear();
     _idMap.clear();
+    _reelReady.clear();
     _ov.clear();
     flags
       ..clear()
@@ -428,6 +431,24 @@ class AppState extends ChangeNotifier {
   }
 
   String? _real(String? id) => id == null ? null : (_idMap[id] ?? id);
+
+  /// The server id of a reel. A reel still uploading has a temporary id; this
+  /// waits for the upload. Returns null if the upload failed.
+  Future<String?> _reelServerId(String id) async {
+    final pending = _reelReady[id];
+    if (pending == null) return id;
+    try {
+      return await pending;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Runs a write against the reel's server id, after its upload if needed.
+  Future<void> _onReel(String id, Future<void> Function(String realId) op) async {
+    final real = await _reelServerId(id);
+    if (real != null) await op(real);
+  }
 
   void setTab(int i) {
     if (tab == i) return;
@@ -632,27 +653,27 @@ class AppState extends ChangeNotifier {
     r.liked = !r.liked;
     notifyListeners();
     final on = r.liked;
-    _send(() => IntlyRepo.setReelLike(r.id, on), key: 'rl:${r.id}', value: on);
+    _send(() => _onReel(r.id, (rid) => IntlyRepo.setReelLike(rid, on)), key: 'rl:${r.id}', value: on);
   }
 
   void toggleReelSave(Reel r) {
     r.saved = !r.saved;
     notifyListeners();
     final on = r.saved;
-    _send(() => IntlyRepo.setReelSave(r.id, on), key: 'rs:${r.id}', value: on);
+    _send(() => _onReel(r.id, (rid) => IntlyRepo.setReelSave(rid, on)), key: 'rs:${r.id}', value: on);
   }
 
   void toggleReelRepost(Reel r) {
     r.reposted = !r.reposted;
     notifyListeners();
     final on = r.reposted;
-    _send(() => IntlyRepo.setReelRepost(r.id, on), key: 'rr:${r.id}', value: on);
+    _send(() => _onReel(r.id, (rid) => IntlyRepo.setReelRepost(rid, on)), key: 'rr:${r.id}', value: on);
   }
 
   void shareReel(Reel r) {
     r.shares++;
     notifyListeners();
-    _send(() => IntlyRepo.shareReel(r.id));
+    _send(() => _onReel(r.id, IntlyRepo.shareReel));
   }
 
   void addReelComment(Reel r, String text, {String? parent, String? replyToUser}) {
@@ -667,8 +688,10 @@ class AppState extends ChangeNotifier {
     );
     notifyListeners();
     _send(() async {
+      final rid = await _reelServerId(r.id);
+      if (rid == null) throw StateError('Your reel is still uploading. Try again in a moment.');
       final real = await IntlyRepo.addReelComment(
-        r.id,
+        rid,
         t,
         parentId: _real(parent),
         replyTo: replyToUser,
@@ -711,13 +734,16 @@ class AppState extends ChangeNotifier {
     );
     reels.insert(0, tmp);
     notifyListeners();
+    final ready = Completer<String>();
+    _reelReady[tmp.id] = ready.future;
+    ready.future.ignore();
     _sendUpload(
       () async {
         final folder = '$ts';
         final vp = await IntlyRepo.uploadReelFile(video, folder, 'video');
         final ap = audio == null ? null : await IntlyRepo.uploadReelFile(audio, folder, 'audio');
         final pp = poster == null ? null : await IntlyRepo.uploadReelFile(poster, folder, 'poster');
-        await IntlyRepo.insertReel(
+        final real = await IntlyRepo.insertReel(
           videoPath: vp,
           audioPath: ap,
           posterPath: pp,
@@ -727,9 +753,12 @@ class AppState extends ChangeNotifier {
           touch: touch,
           fx: fx,
         );
+        _idMap[tmp.id] = real;
+        ready.complete(real);
         await refresh();
       },
       onFail: () {
+        if (!ready.isCompleted) ready.completeError(StateError('upload failed'));
         reels.remove(tmp);
         notifyListeners();
       },
@@ -739,7 +768,7 @@ class AppState extends ChangeNotifier {
   void deleteReel(Reel r) {
     reels.remove(r);
     notifyListeners();
-    _send(() => IntlyRepo.deleteReel(r.id));
+    _send(() => _onReel(r.id, IntlyRepo.deleteReel));
   }
 
   /// Saves a reel as a draft. Only you can see it.

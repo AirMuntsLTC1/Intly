@@ -86,6 +86,7 @@ class IntlyRepo {
       return e.message;
     }
     if (e is AuthException) return e.message;
+    if (e is StateError) return e.message;
     if (e is SocketException || e is TimeoutException) {
       return "Couldn't reach Intly. Check your connection and try again.";
     }
@@ -336,7 +337,7 @@ class IntlyRepo {
   static Future<String> uploadReelFile(String localFile, String folder, String name) =>
       uploadMedia(reelBucket, '$_uid/$folder/$name.${_ext(localFile)}', localFile);
 
-  static Future<void> insertReel({
+  static Future<String> insertReel({
     required String videoPath,
     String? audioPath,
     String? posterPath,
@@ -346,7 +347,7 @@ class IntlyRepo {
     required double touch,
     required int fx,
   }) async {
-    await _db.from('reels').insert({
+    final row = await _db.from('reels').insert({
       'user_id': _uid,
       'video_path': videoPath,
       'audio_path': audioPath,
@@ -357,7 +358,8 @@ class IntlyRepo {
       'playback_speed': speed,
       'touch_strength': touch,
       'effect_index': fx,
-    });
+    }).select('id').single();
+    return row['id'] as String;
   }
 
   static Future<String> insertDraft({
