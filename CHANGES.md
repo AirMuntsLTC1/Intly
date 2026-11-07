@@ -1,3 +1,8 @@
+# Intly 1.3.6 — changes
+
+## 1.3.6
+- Removed a redundant import flagged by `flutter analyze`.
+
 # Intly 1.3.5 — changes
 
 ## 1.3.5
