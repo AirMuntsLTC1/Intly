@@ -1,0 +1,79 @@
+INTLY - CONNECT EVERYTHING TO SUPABASE
+======================================
+
+This zip contains NEW or REPLACED files only. Unzip it inside your project
+root in Termux so the paths line up (answer "yes" to overwrite).
+
+NEW / REPLACED FILES
+--------------------
+  supabase/migrations/20261107040000_intly_media_storage.sql   (new)
+  lib/data/intly_repository.dart                               (new)
+  lib/data/media_cache.dart                                    (new)
+  lib/data/local_cache.dart                                    (new)
+  lib/data/app_bootstrap.dart                                  (new)
+  lib/state.dart                                               (replaced)
+  lib/main.dart                                                (replaced)
+  lib/auth/auth_gate.dart                                      (replaced)
+
+
+STEP 1 - Apply the database migration
+-------------------------------------
+Creates the private media buckets and their access rules. The earlier
+schema migration must already be applied.
+
+  cd ~/intly
+  supabase db push
+
+No CLI? Open the Supabase dashboard > SQL Editor, paste the whole file
+supabase/migrations/20261107040000_intly_media_storage.sql, and Run.
+
+
+STEP 2 - Remove the mock data
+-----------------------------
+  rm assets/seed.json tools/gen_seed.py
+
+In pubspec.yaml, under "flutter:", delete the assets block so it reads:
+
+  flutter:
+    uses-material-design: true
+
+In .github/workflows/build.yml, delete the step that runs the seed
+generator (the step named "Python - generate seed data" and its
+"run: python3 tools/gen_seed.py" line).
+
+
+STEP 3 - Remove the old profile sync
+------------------------------------
+lib/auth/auth_service.dart still contains a class called CloudSync at the
+bottom of the file. It is replaced by the repository. Delete everything from
+the comment line
+
+  /// Keeps the signed-in user's profile and settings in step with Supabase.
+
+down to the end of the file. Leave the AuthService class above it alone.
+
+
+STEP 4 - Build and test
+-----------------------
+  git add -A && git commit -m "Connect to Supabase, remove mock data" && git push
+
+Then download the Intly-arm64-apk artifact from GitHub Actions and install it.
+
+Test in this order:
+  1. Sign up with a new account, then log out and log in again.
+  2. Publish a text post, then a photo post. Close the app and reopen it.
+     The posts should show immediately (from the cache), then refresh.
+  3. Like, save, comment, reply, and like a comment. Check the rows appear
+     in the Supabase Table Editor.
+  4. Follow a second account from another login. Accept it if it's private.
+  5. Turn on airplane mode and reopen: the last feed should still show.
+
+
+NOTES
+-----
+- Posts you made before this update were stored only on the phone
+  (SharedPreferences). They are not moved to Supabase; post them again.
+- Media is downloaded to the phone once, then kept. First launch on a new
+  phone takes a moment while photos and videos download in the background.
+- Changes made while offline are not queued yet. They show an error and
+  the screen re-syncs. An offline queue is the next step if you want it.

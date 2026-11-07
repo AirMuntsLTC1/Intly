@@ -1,9 +1,10 @@
 import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'auth/auth_gate.dart';
-import 'auth/supabase_config.dart';
+import 'data/app_bootstrap.dart';
 import 'state.dart';
 import 'theme.dart';
 
@@ -11,17 +12,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  if (SupabaseConfig.keyIsSet) {
-    try {
-      await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
-      SupabaseConfig.ready = true;
-    } catch (e) {
-      SupabaseConfig.startError = e.toString();
-      debugPrint('Supabase start failed: $e');
-    }
-  }
-  final state = AppState();
-  await state.load();
+  final state = await AppBootstrap.run();
   runApp(IntlyApp(state));
 }
 
@@ -48,6 +39,12 @@ class _IntlyAppState extends State<IntlyApp> with WidgetsBindingObserver {
   // Phone switched between light/dark: rebuild so "system" mode follows it.
   @override
   void didChangePlatformBrightness() => setState(() {});
+
+  // Back in the app: pull fresh data in the background.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    if (lifecycle == AppLifecycleState.resumed) widget.state.refresh();
+  }
 
   @override
   Widget build(BuildContext context) {

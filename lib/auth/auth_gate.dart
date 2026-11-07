@@ -12,6 +12,7 @@ import 'auth_service.dart';
 import 'supabase_config.dart';
 
 /// Shows the login screens when nobody is signed in, and the app when someone is.
+/// Signing in loads that user's cache and then fresh data; signing out clears them.
 class AuthGate extends StatefulWidget {
   final AppState state;
   const AuthGate({super.key, required this.state});
@@ -22,7 +23,6 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   StreamSubscription<AuthState>? _sub;
-  CloudSync? _cloud;
   String? _userId;
 
   @override
@@ -39,7 +39,6 @@ class _AuthGateState extends State<AuthGate> {
   void dispose() {
     AuthService.tick.removeListener(_refresh);
     _sub?.cancel();
-    _cloud?.stop();
     super.dispose();
   }
 
@@ -47,9 +46,12 @@ class _AuthGateState extends State<AuthGate> {
     if (!SupabaseConfig.ready) return;
     final uid = Supabase.instance.client.auth.currentSession?.user.id;
     if (uid != _userId) {
-      _cloud?.stop();
-      _cloud = uid == null ? null : (CloudSync(widget.state)..start(uid));
       _userId = uid;
+      if (uid == null) {
+        widget.state.onSignedOut();
+      } else {
+        widget.state.onSignedIn();
+      }
     }
     if (mounted) setState(() {});
   }
