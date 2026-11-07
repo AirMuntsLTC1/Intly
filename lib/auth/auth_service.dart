@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../state.dart';
 import 'supabase_config.dart';
 
 /// An error message that can be shown under a form.

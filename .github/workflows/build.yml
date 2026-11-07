@@ -41,8 +41,6 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Python - generate seed data
-        run: python3 tools/gen_seed.py
 
       - name: Create Android scaffold
         run: |
