@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import 'dart:io';
 
@@ -68,7 +69,14 @@ class IntlyRepo {
   /// A short, user-facing reason for a failed call.
   static String describe(Object e) {
     if (e is PostgrestException) return e.message;
-    if (e is StorageException) return e.message;
+    if (e is StorageException) {
+      final m = e.message.toLowerCase();
+      if (m.contains('exceed') || m.contains('maximum') || e.statusCode == '413') {
+        return 'This file is too large for Supabase Storage. Choose a shorter video, '
+            'or raise the file size limit in Supabase > Storage > Settings.';
+      }
+      return e.message;
+    }
     if (e is AuthException) return e.message;
     if (e is SocketException || e is TimeoutException) {
       return "Couldn't reach Intly. Check your connection and try again.";
@@ -489,3 +497,5 @@ class IntlyRepo {
         _ => 'application/octet-stream',
       };
 }
+
+

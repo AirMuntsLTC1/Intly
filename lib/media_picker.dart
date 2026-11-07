@@ -1,4 +1,5 @@
 
+
 import 'dart:collection';
 import 'dart:io';
 import 'dart:typed_data';
@@ -10,6 +11,10 @@ import 'theme.dart';
 import 'widgets.dart';
 
 /// What the picker hands back: a photo, or a video plus its poster frame.
+/// Largest video the app will upload. Must not exceed the Supabase Storage
+/// file size limit (Dashboard > Storage > Settings). Default plan limit: 50 MB.
+const int kMaxVideoBytes = 50 * 1024 * 1024;
+
 class PickedMedia {
   final String image; // photo path, or poster of the video
   final String? video; // video path (null for photos)
@@ -129,6 +134,10 @@ class MediaLibrary extends ChangeNotifier {
     List<AssetEntity> list = const [];
     try {
       list = await a.getAssetListPaged(page: _next, size: _pageSize);
+      // the reels picker shows videos only, even if the album holds photos too
+      if (type == RequestType.video) {
+        list = list.where((x) => x.type == AssetType.video).toList();
+      }
     } catch (_) {}
     if (gen != _gen) return;
     loading = false;
@@ -177,7 +186,11 @@ class MediaLibrary extends ChangeNotifier {
     if (a.type == AssetType.video) {
       final src = await a.originFile;
       if (src == null) throw 'Could not open this video';
-      if (await src.length() > 150 * 1024 * 1024) throw 'This video is too large (max 150 MB)';
+      final size = await src.length();
+      if (size > kMaxVideoBytes) {
+        throw 'This video is ${(size / (1024 * 1024)).round()} MB. The limit is '
+            '${kMaxVideoBytes ~/ (1024 * 1024)} MB. Choose a shorter video.';
+      }
       final poster = await a.thumbnailDataWithSize(const ThumbnailSize(1280, 1280), quality: 85);
       if (poster == null) throw 'Could not open this video';
       var ext = src.path.contains('.') ? src.path.split('.').last.toLowerCase() : 'mp4';
@@ -450,3 +463,5 @@ class _ThumbState extends State<_Thumb> {
 
   String _dur(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
 }
+
+

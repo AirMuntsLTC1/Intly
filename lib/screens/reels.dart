@@ -1,4 +1,5 @@
 
+
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:audioplayers/audioplayers.dart';
@@ -177,9 +178,64 @@ class _ReelsState extends State<ReelsScreen> {
                   ),
           ),
           _topBar(),
+          Positioned(
+            top: 70, left: 0, right: 0,
+            child: ValueListenableBuilder<int>(
+              valueListenable: s.uploads,
+              builder: (context, n, _) => n == 0
+                  ? const SizedBox.shrink()
+                  : Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xCC000000),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const SizedBox(
+                            width: 14, height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          ),
+                          const SizedBox(width: 10),
+                          Text('Posting reel…', style: ts(Colors.white, 14, FontWeight.w700)),
+                        ]),
+                      ),
+                    ),
+            ),
+          ),
         ]),
       ),
     );
+  }
+}
+
+/// Keeps the last few reel videos ready, so going back to a reel shows its first
+/// frame straight away instead of waiting for the video to load again.
+class ReelVideoPool {
+  ReelVideoPool._();
+  static const _max = 4;
+  static final Map<String, VideoPlayerController> _map = {}; // least recent first
+  static final Set<String> _attached = {};
+
+  static VideoPlayerController acquire(String path) {
+    final c = _map.remove(path) ?? VideoPlayerController.file(File(path));
+    _map[path] = c;
+    _attached.add(path);
+    _trim();
+    return c;
+  }
+
+  static void release(String path) {
+    _attached.remove(path);
+    _trim();
+  }
+
+  static void _trim() {
+    for (final k in _map.keys.toList()) {
+      if (_map.length <= _max) break;
+      if (_attached.contains(k)) continue;
+      _map.remove(k)?.dispose();
+    }
   }
 }
 
@@ -223,8 +279,7 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _v?.removeListener(_tick);
-    _v?.dispose();
+    _disposeVideo();
     _a?.dispose();
     _art.dispose();
     _burst.dispose();
@@ -233,6 +288,11 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
 
   void _sync() {
     final r = widget.reel;
+    if (r.video == null && widget.near) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.s.ensureReel(r);
+      });
+    }
     if (r.video != null) {
       if (widget.near && _v == null) _initVideo();
       if (!widget.near && _v != null) _disposeVideo();
@@ -257,24 +317,36 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
 
   void _initVideo() {
     final r = widget.reel;
-    final c = VideoPlayerController.file(File(r.video!));
+    final c = ReelVideoPool.acquire(r.video!);
     _v = c;
     c.setLooping(true);
-    c.initialize().then((_) async {
+    void ready() {
       if (!mounted || _v != c) return;
-      await c.setPlaybackSpeed(r.speed);
-      if (r.audio != null) await c.setVolume(0);
+      c.removeListener(_tick);
       c.addListener(_tick);
       setState(() {});
       _sync();
-    }).catchError((Object _) {});
+    }
+    if (c.value.isInitialized) {
+      c.setPlaybackSpeed(r.speed);
+      if (r.audio != null) c.setVolume(0);
+      Future.microtask(ready);
+    } else {
+      c.initialize().then((_) async {
+        if (!mounted || _v != c) return;
+        await c.setPlaybackSpeed(r.speed);
+        if (r.audio != null) await c.setVolume(0);
+        ready();
+      }).catchError((Object _) {});
+    }
   }
 
   void _disposeVideo() {
     final c = _v;
     _v = null;
     c?.removeListener(_tick);
-    c?.dispose();
+    c?.pause();
+    if (c != null) ReelVideoPool.release(c.dataSource);
     _stopAudio();
   }
 
@@ -328,11 +400,17 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
   }
 
   // ---------------------------------------------------------------- media layers
+  Widget _posterFrame(Reel r) => SizedBox.expand(
+        child: Image.file(File(r.poster!), fit: BoxFit.cover, gaplessPlayback: true),
+      );
+
   Widget _media(Reel r) {
-    if (r.video == null) return _art_(r);
+    if (r.video == null) return r.poster != null ? _posterFrame(r) : _art_(r);
     final v = _v;
     if (v == null || !v.value.isInitialized) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white));
+      return r.poster != null
+          ? _posterFrame(r)
+          : const Center(child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white));
     }
     final size = v.value.size;
     final portrait = size.height >= size.width * 1.2;
@@ -488,14 +566,19 @@ class _ReelPageState extends State<ReelPage> with TickerProviderStateMixin {
             const SizedBox(width: 12),
             Tap(
               onTap: () => s.toggleFollow(u.id),
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
                   color: following ? const Color(0x33FFFFFF) : Colors.transparent,
                   borderRadius: BorderRadius.circular(9),
                   border: Border.all(color: Colors.white, width: 1.2),
                 ),
-                child: Text(following ? 'Following' : 'Follow', style: ts(Colors.white, 13, FontWeight.w700)),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  child: Text(following ? 'Following' : 'Follow',
+                      key: ValueKey(following), style: ts(Colors.white, 13, FontWeight.w700)),
+                ),
               ),
             ),
           ],
@@ -844,3 +927,5 @@ class _ReelCommentTile extends StatelessWidget {
     );
   }
 }
+
+

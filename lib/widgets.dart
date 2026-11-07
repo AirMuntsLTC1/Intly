@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -238,8 +239,16 @@ class FollowBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           border: on ? Border.all(color: p.line, width: 1.5) : null,
         ),
-        child: Text(on ? 'Following' : 'Follow',
-            style: ts(on ? p.text : Colors.white, small ? 13 : 14, FontWeight.w700)),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          transitionBuilder: (c, a) => FadeTransition(
+            opacity: a,
+            child: ScaleTransition(scale: Tween(begin: .92, end: 1.0).animate(a), child: c),
+          ),
+          child: Text(on ? 'Following' : 'Follow',
+              key: ValueKey(on),
+              style: ts(on ? p.text : Colors.white, small ? 13 : 14, FontWeight.w700)),
+        ),
       ),
     );
   }
@@ -582,4 +591,6 @@ class _SheetRow extends StatelessWidget {
     );
   }
 }
+
+
 

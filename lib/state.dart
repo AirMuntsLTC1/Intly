@@ -72,9 +72,10 @@ class Notif {
 
 class Reel {
   final String id, userId, audioName, caption;
-  final String? video; // local file; null until the video is on this phone
-  final String? audio; // optional sound track played with the video
-  final String? poster; // cover image for profile grids
+  String? video; // local file; null until the video is on this phone
+  String? audio; // optional sound track played with the video
+  String? poster; // cover image for profile grids
+  String? videoPath, audioPath, posterPath; // storage paths, used to download on demand
   final double speed, touch; // playback speed, touch-up strength 0..1
   final int fx, hue, icon, minutes, likes, reposts, saves;
   int comments, shares;
@@ -158,9 +159,21 @@ class Scope extends InheritedNotifier<AppState> {
       c.dependOnInheritedWidgetOfExactType<Scope>()!.notifier!;
 }
 
-/// The app's state. Screens read it synchronously and call its methods. Each
-/// change shows at once, then goes to Supabase in order. If the server
-/// refuses a change, the app re-reads the server so the screen is correct again.
+/// A change the user made that the server has not confirmed yet. While it is
+/// pending, every refresh shows it, so the screen never flips back.
+class _Pending {
+  _Pending(this.value);
+  final bool value;
+  int? settled; // write-sequence number once the server accepted it
+}
+
+/// The app's state. Screens read it synchronously and call its methods.
+///
+/// Two queues go to Supabase, each in order:
+///  * quick writes (likes, saves, follows, comments): never wait for uploads;
+///  * uploads (photos and videos): one at a time, in the background.
+/// A change shows at once and stays on screen until the server confirms it.
+/// If the server refuses it, the change is undone and the user sees a message.
 class AppState extends ChangeNotifier {
   static const Map<String, bool> _defaults = {
     'push': true, 'likes': true, 'follows': true, 'private': false, 'activity': true,
@@ -175,7 +188,13 @@ class AppState extends ChangeNotifier {
   /// 'system' (default, follows the phone), 'light' or 'dark'.
   final mode = ValueNotifier<String>('system');
 
-  /// Set when the last server call failed; cleared when one succeeds.
+  /// Number of uploads still running (shows a "Posting…" pill).
+  final ValueNotifier<int> uploads = ValueNotifier<int>(0);
+
+  /// A short message for the user when something could not be saved.
+  final ValueNotifier<String?> notice = ValueNotifier<String?>(null);
+
+  /// Set when the last refresh failed (for example offline); cleared on success.
   final syncError = ValueNotifier<String?>(null);
 
   int tab = 0;
@@ -199,9 +218,13 @@ class AppState extends ChangeNotifier {
   late User me = User('me', 'You', 'you', 'Hello Intly 👋', 262, 0, 0);
 
   final Map<String, String> _idMap = {}; // temporary id -> server id
+  final Map<String, _Pending> _ov = {}; // pending changes, by key (see _send)
+  int _writeSeq = 0;
   RemoteSnapshot? _snap;
   Future<void>? _inFlight;
-  Future<void> _chain = Future.value();
+  Future<void> _chain = Future<void>.value();
+  Future<void> _uploadChain = Future<void>.value();
+  Timer? _saveTimer, _reapplyTimer;
   final Set<String> _downloading = {};
 
   User user(String id) => users[id] ?? User(id, 'Intly user', 'user', '', 262, 0, 0);
@@ -250,16 +273,21 @@ class AppState extends ChangeNotifier {
   // Startup, sign-in and sign-out
   // ---------------------------------------------------------------------------
 
-  /// Called once at launch by AppBootstrap.
+  /// Runs at launch, in parallel with the Supabase connection. It does not wait
+  /// for the network: the last saved data appears as soon as it is read.
   Future<void> start() async {
     Native.init();
     await MediaCache.init();
-    await _loadCache();
+    final uid = await LocalCache.lastUid();
+    if (uid != null) await _loadCache(uid);
   }
 
-  /// Called when someone signs in: show their cache, then fetch fresh data.
+  /// Called when someone signs in: keep showing what is already here, then fetch.
   Future<void> onSignedIn() async {
-    await _loadCache();
+    final uid = IntlyRepo.currentUid;
+    if (uid == null) return;
+    unawaited(LocalCache.setLastUid(uid));
+    if (_snap == null) await _loadCache(uid);
     await refresh();
   }
 
@@ -270,6 +298,7 @@ class AppState extends ChangeNotifier {
     _resetMemory();
     notifyListeners();
     if (uid != null) await LocalCache.clear(uid);
+    await LocalCache.clearLastUid();
     await MediaCache.clear();
   }
 
@@ -282,11 +311,9 @@ class AppState extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> _loadCache() async {
-    final uid = IntlyRepo.currentUid;
-    if (uid == null) return;
+  Future<void> _loadCache(String uid) async {
     final data = await LocalCache.load(uid);
-    if (data == null) return;
+    if (data == null || _snap != null) return; // a fresher snapshot may have arrived
     _snap = RemoteSnapshot(data);
     _apply(_snap!);
     notifyListeners();
@@ -297,18 +324,28 @@ class AppState extends ChangeNotifier {
 
   Future<void> _doRefresh() async {
     if (!IntlyRepo.signedIn) return;
+    final startSeq = _writeSeq;
     try {
       final snap = await IntlyRepo.fetchSnapshot();
       _snap = snap;
       _apply(snap);
+      // Changes confirmed before this fetch started are now part of the server data.
+      _ov.removeWhere((_, e) => e.settled != null && e.settled! <= startSeq);
       syncError.value = null;
       notifyListeners();
-      unawaited(LocalCache.save(snap.uid, snap.data));
+      _scheduleSave(snap);
       unawaited(_downloadMissing(snap));
     } catch (e) {
       debugPrint('Intly refresh failed: $e');
       syncError.value = IntlyRepo.describe(e);
     }
+  }
+
+  void _scheduleSave(RemoteSnapshot snap) {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 1200), () {
+      LocalCache.save(snap.uid, snap.data);
+    });
   }
 
   void _resetMemory() {
@@ -329,6 +366,7 @@ class AppState extends ChangeNotifier {
     reelComments.clear();
     drafts.clear();
     _idMap.clear();
+    _ov.clear();
     flags
       ..clear()
       ..addAll(_defaults);
@@ -339,16 +377,43 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Writes: every change goes through _send, one at a time, in order.
+  // Writes
   // ---------------------------------------------------------------------------
 
-  Future<void> _send(Future<void> Function() op) {
-    _chain = _chain.then((_) => op()).catchError((Object e) async {
-      debugPrint('Intly write failed: $e');
-      syncError.value = IntlyRepo.describe(e);
-      await refresh();
+  /// Sends one quick write to Supabase, in order. When [key] is given, the
+  /// change [value] is shown on screen until the server confirms it.
+  Future<void> _send(Future<void> Function() op, {String? key, bool? value}) {
+    final entry = key == null ? null : (_ov[key] = _Pending(value!));
+    _chain = _chain.then((_) async {
+      try {
+        await op();
+        if (entry != null && identical(_ov[key], entry)) entry.settled = ++_writeSeq;
+      } catch (e) {
+        debugPrint('Intly write failed: $e');
+        if (entry != null && identical(_ov[key], entry)) _ov.remove(key);
+        notice.value = IntlyRepo.describe(e);
+        await refresh(); // re-read the server, which puts the screen back to the truth
+      }
     });
     return _chain;
+  }
+
+  /// Sends an upload (photo or video) in the background, one at a time. The
+  /// "Posting…" pill shows while it runs. Quick writes are not blocked by it.
+  void _sendUpload(Future<void> Function() op, {VoidCallback? onFail}) {
+    uploads.value++;
+    _uploadChain = _uploadChain.then((_) async {
+      try {
+        await op();
+      } catch (e) {
+        debugPrint('Intly upload failed: $e');
+        onFail?.call();
+        notice.value = IntlyRepo.describe(e);
+        notifyListeners();
+      } finally {
+        uploads.value--;
+      }
+    });
   }
 
   String? _real(String? id) => id == null ? null : (_idMap[id] ?? id);
@@ -379,20 +444,20 @@ class AppState extends ChangeNotifier {
     _send(() => IntlyRepo.updateProfile(name: me.name, bio: me.bio));
   }
 
-  // Posts -----------------------------------------------------------------------
+  // Posts ----------------------------------------------------------------------
 
   void toggleLike(Post p) {
     p.liked = !p.liked;
     notifyListeners();
     final on = p.liked;
-    _send(() => IntlyRepo.setPostLike(p.id, on));
+    _send(() => IntlyRepo.setPostLike(p.id, on), key: 'pl:${p.id}', value: on);
   }
 
   void toggleSave(Post p) {
     p.saved = !p.saved;
     notifyListeners();
     final on = p.saved;
-    _send(() => IntlyRepo.setPostSave(p.id, on));
+    _send(() => IntlyRepo.setPostSave(p.id, on), key: 'ps:${p.id}', value: on);
   }
 
   void reportPost(Post p) {
@@ -402,7 +467,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Creates a new post, or updates [edit] when editing. Local media files are
-  /// uploaded to Storage; the screen gets the post back on the next refresh.
+  /// uploaded in the background; the post is shown at once.
   void publish({
     Post? edit,
     required String text,
@@ -442,7 +507,7 @@ class AppState extends ChangeNotifier {
           'scale': _between(s.s, 0.1, 10),
         },
     ];
-    _send(() async {
+    Future<void> op() async {
       await IntlyRepo.savePost(
         id: editId,
         body: text,
@@ -455,7 +520,20 @@ class AppState extends ChangeNotifier {
         replaceMedia: mediaChanged,
       );
       await refresh();
-    });
+    }
+
+    void undo() {
+      if (edit == null) {
+        posts.remove(p);
+        notifyListeners();
+      }
+    }
+
+    if (mediaChanged && (image != null || video != null)) {
+      _sendUpload(op, onFail: undo);
+    } else {
+      _send(op);
+    }
   }
 
   void deletePost(Post p) {
@@ -465,7 +543,7 @@ class AppState extends ChangeNotifier {
     _send(() => IntlyRepo.deletePost(p.id));
   }
 
-  // Comments ----------------------------------------------------------------------
+  // Comments -------------------------------------------------------------------
 
   void addComment(Post p, String text, {String? parent, String? replyToUser}) {
     final t = text.trim();
@@ -503,32 +581,36 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final realId = _real(id) ?? id;
     final isReel = _reelCommentIds.contains(id);
-    _send(() => isReel
-        ? IntlyRepo.setReelCommentLike(realId, on)
-        : IntlyRepo.setCommentLike(realId, on));
+    _send(
+      () => isReel
+          ? IntlyRepo.setReelCommentLike(realId, on)
+          : IntlyRepo.setCommentLike(realId, on),
+      key: 'cl:$id',
+      value: on,
+    );
   }
 
-  // Reels -------------------------------------------------------------------------
+  // Reels ----------------------------------------------------------------------
 
   void toggleReelLike(Reel r) {
     r.liked = !r.liked;
     notifyListeners();
     final on = r.liked;
-    _send(() => IntlyRepo.setReelLike(r.id, on));
+    _send(() => IntlyRepo.setReelLike(r.id, on), key: 'rl:${r.id}', value: on);
   }
 
   void toggleReelSave(Reel r) {
     r.saved = !r.saved;
     notifyListeners();
     final on = r.saved;
-    _send(() => IntlyRepo.setReelSave(r.id, on));
+    _send(() => IntlyRepo.setReelSave(r.id, on), key: 'rs:${r.id}', value: on);
   }
 
   void toggleReelRepost(Reel r) {
     r.reposted = !r.reposted;
     notifyListeners();
     final on = r.reposted;
-    _send(() => IntlyRepo.setReelRepost(r.id, on));
+    _send(() => IntlyRepo.setReelRepost(r.id, on), key: 'rr:${r.id}', value: on);
   }
 
   void shareReel(Reel r) {
@@ -566,7 +648,7 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  /// Uploads a new reel and its files, then shows it in the feed.
+  /// Uploads a new reel in the background and shows it at once.
   void addReel({
     required String video,
     String? audio,
@@ -579,39 +661,43 @@ class AppState extends ChangeNotifier {
     String? id, // kept for compatibility; the server assigns ids
   }) {
     final ts = DateTime.now().millisecondsSinceEpoch;
-    reels.insert(
-      0,
-      Reel(
-        id: 'new$ts',
-        userId: 'me',
-        caption: caption,
-        video: video,
-        audio: audio,
-        poster: poster,
-        audioName: audioName,
-        speed: speed,
-        touch: touch,
-        fx: fx,
-      ),
+    final tmp = Reel(
+      id: 'new$ts',
+      userId: 'me',
+      caption: caption,
+      video: video,
+      audio: audio,
+      poster: poster,
+      audioName: audioName,
+      speed: speed,
+      touch: touch,
+      fx: fx,
     );
+    reels.insert(0, tmp);
     notifyListeners();
-    _send(() async {
-      final folder = '$ts';
-      final vp = await IntlyRepo.uploadReelFile(video, folder, 'video');
-      final ap = audio == null ? null : await IntlyRepo.uploadReelFile(audio, folder, 'audio');
-      final pp = poster == null ? null : await IntlyRepo.uploadReelFile(poster, folder, 'poster');
-      await IntlyRepo.insertReel(
-        videoPath: vp,
-        audioPath: ap,
-        posterPath: pp,
-        audioName: audioName,
-        caption: caption,
-        speed: speed,
-        touch: touch,
-        fx: fx,
-      );
-      await refresh();
-    });
+    _sendUpload(
+      () async {
+        final folder = '$ts';
+        final vp = await IntlyRepo.uploadReelFile(video, folder, 'video');
+        final ap = audio == null ? null : await IntlyRepo.uploadReelFile(audio, folder, 'audio');
+        final pp = poster == null ? null : await IntlyRepo.uploadReelFile(poster, folder, 'poster');
+        await IntlyRepo.insertReel(
+          videoPath: vp,
+          audioPath: ap,
+          posterPath: pp,
+          audioName: audioName,
+          caption: caption,
+          speed: speed,
+          touch: touch,
+          fx: fx,
+        );
+        await refresh();
+      },
+      onFail: () {
+        reels.remove(tmp);
+        notifyListeners();
+      },
+    );
   }
 
   void deleteReel(Reel r) {
@@ -620,8 +706,7 @@ class AppState extends ChangeNotifier {
     _send(() => IntlyRepo.deleteReel(r.id));
   }
 
-  /// Saves a reel as a draft. Only you can see it. The file is uploaded to your
-  /// private folder in Storage.
+  /// Saves a reel as a draft. Only you can see it.
   void addDraft({
     required String video,
     String? audio,
@@ -647,23 +732,29 @@ class AppState extends ChangeNotifier {
     );
     drafts.insert(0, d);
     notifyListeners();
-    _send(() async {
-      final folder = 'drafts/$ts';
-      d.videoPath = await IntlyRepo.uploadReelFile(video, folder, 'video');
-      d.audioPath = audio == null ? null : await IntlyRepo.uploadReelFile(audio, folder, 'audio');
-      d.posterPath = poster == null ? null : await IntlyRepo.uploadReelFile(poster, folder, 'poster');
-      d.id = await IntlyRepo.insertDraft(
-        videoPath: d.videoPath!,
-        audioPath: d.audioPath,
-        posterPath: d.posterPath,
-        audioName: audioName,
-        caption: caption,
-        speed: speed,
-        touch: touch,
-        fx: fx,
-      );
-      await refresh();
-    });
+    _sendUpload(
+      () async {
+        final folder = 'drafts/$ts';
+        d.videoPath = await IntlyRepo.uploadReelFile(video, folder, 'video');
+        d.audioPath = audio == null ? null : await IntlyRepo.uploadReelFile(audio, folder, 'audio');
+        d.posterPath = poster == null ? null : await IntlyRepo.uploadReelFile(poster, folder, 'poster');
+        d.id = await IntlyRepo.insertDraft(
+          videoPath: d.videoPath!,
+          audioPath: d.audioPath,
+          posterPath: d.posterPath,
+          audioName: audioName,
+          caption: caption,
+          speed: speed,
+          touch: touch,
+          fx: fx,
+        );
+        await refresh();
+      },
+      onFail: () {
+        drafts.remove(d);
+        notifyListeners();
+      },
+    );
   }
 
   void deleteDraft(ReelDraft d) {
@@ -695,26 +786,46 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  // Follows and notifications -----------------------------------------------------
+  /// Downloads a reel's video when it comes near the screen (not all at once).
+  void ensureReel(Reel r) {
+    final path = r.videoPath;
+    if (r.video != null || path == null) return;
+    final key = 'v:$path';
+    if (!_downloading.add(key)) return;
+    unawaited(MediaCache.fetch(IntlyRepo.reelBucket, path).then((_) {
+      _scheduleReapply();
+    }).catchError((Object e) {
+      debugPrint('Video download failed: $e');
+    }).whenComplete(() {
+      _downloading.remove(key);
+    }));
+  }
+
+  // Follows and notifications ----------------------------------------------------
 
   void toggleFollow(String id) {
-    if (following.contains(id) || _pendingOut.contains(id)) {
+    final on = !(following.contains(id) || _pendingOut.contains(id));
+    if (on) {
+      following.add(id);
+    } else {
       following.remove(id);
       _pendingOut.remove(id);
-      notifyListeners();
-      _send(() => IntlyRepo.unfollow(id));
-    } else {
-      following.add(id);
-      notifyListeners();
-      _send(() async {
+    }
+    notifyListeners();
+    _send(() async {
+      if (on) {
         final status = await IntlyRepo.follow(id);
         if (status == 'pending') {
+          // private account: the request is waiting, so it is not "following" yet
+          _ov.remove('f:$id');
           following.remove(id);
           _pendingOut.add(id);
           notifyListeners();
         }
-      });
-    }
+      } else {
+        await IntlyRepo.unfollow(id);
+      }
+    }, key: 'f:$id', value: on);
   }
 
   void confirmRequest(String id) {
@@ -754,6 +865,17 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------------------
   // Reads: turn one server snapshot into the objects the screens use.
   // ---------------------------------------------------------------------------
+
+  /// Reads one pending change, falling back to what the server says.
+  bool _pendingOr(String key, bool serverValue) => _ov[key]?.value ?? serverValue;
+
+  /// Applies a comment or reply like count, with any pending change on top.
+  void _commentLike(String id, int total, Set<String> serverLiked) {
+    final server = serverLiked.contains(id);
+    final liked = _pendingOr('cl:$id', server);
+    _likeCounts[id] = (total - (server ? 1 : 0)) + (liked ? 1 : 0);
+    if (liked) likedComments.add(id);
+  }
 
   void _apply(RemoteSnapshot s) {
     final uid = s.uid;
@@ -817,6 +939,15 @@ class AppState extends ChangeNotifier {
       }
       if (to == uid && !accepted) incoming.add(from);
     }
+    for (final e in _ov.entries) {
+      if (!e.key.startsWith('f:')) continue;
+      final id = e.key.substring(2);
+      if (e.value.value) {
+        following.add(id);
+      } else {
+        following.remove(id);
+      }
+    }
 
     // Posts
     final postLiked = s.ids('postLiked');
@@ -824,19 +955,19 @@ class AppState extends ChangeNotifier {
     posts.clear();
     for (final r in s.rows('posts')) {
       final id = r['id'] as String;
-      final liked = postLiked.contains(id);
+      final serverLiked = postLiked.contains(id);
       final p = Post(
         id,
         local(r['user_id'] as String),
         (r['body'] as String?) ?? '',
         _ageMinutes(r['created_at'] as String),
         -1,
-        _minus(r['like_count'], liked),
+        _minus(r['like_count'], serverLiked),
         (r['comment_count'] as int?) ?? 0,
         (r['share_count'] as int?) ?? 0,
       );
-      p.liked = liked;
-      p.saved = postSaved.contains(id);
+      p.liked = _pendingOr('pl:$id', serverLiked);
+      p.saved = _pendingOr('ps:$id', postSaved.contains(id));
       p.bg = (r['background_index'] as int?) ?? -1;
       p.font = (r['font_index'] as int?) ?? 0;
       p.tcolor = (r['text_color_index'] as int?) ?? -1;
@@ -874,6 +1005,9 @@ class AppState extends ChangeNotifier {
     comments.clear();
     _likeCounts.clear();
     _reelCommentIds.clear();
+    likedComments.clear();
+    final commentLiked = s.ids('commentLiked');
+    final reelCommentLiked = s.ids('reelCommentLiked');
     for (final c in s.rows('comments')) {
       final id = c['id'] as String;
       comments.add(Comment(
@@ -885,7 +1019,7 @@ class AppState extends ChangeNotifier {
         c['parent_id'] as String?,
         c['reply_to_user_id'] == null ? null : local(c['reply_to_user_id'] as String),
       ));
-      _likeCounts[id] = (c['like_count'] as int?) ?? 0;
+      _commentLike(id, (c['like_count'] as int?) ?? 0, commentLiked);
     }
     reelComments.clear();
     for (final c in s.rows('reelComments')) {
@@ -900,13 +1034,9 @@ class AppState extends ChangeNotifier {
         parent: c['parent_id'] as String?,
         replyToUser: c['reply_to_user_id'] == null ? null : local(c['reply_to_user_id'] as String),
       ));
-      _likeCounts[id] = (c['like_count'] as int?) ?? 0;
       _reelCommentIds.add(id);
+      _commentLike(id, (c['like_count'] as int?) ?? 0, reelCommentLiked);
     }
-    likedComments
-      ..clear()
-      ..addAll(s.ids('commentLiked'))
-      ..addAll(s.ids('reelCommentLiked'));
 
     // Notifications
     notifs.clear();
@@ -930,16 +1060,17 @@ class AppState extends ChangeNotifier {
     reels.clear();
     for (final r in s.rows('reels')) {
       final id = r['id'] as String;
-      final liked = rLiked.contains(id);
-      final saved = rSaved.contains(id);
-      final reposted = rReposted.contains(id);
+      final serverLiked = rLiked.contains(id);
+      final serverSaved = rSaved.contains(id);
+      final serverReposted = rReposted.contains(id);
+      final videoPath = r['video_path'] as String;
       final audioPath = r['audio_path'] as String?;
       final posterPath = r['poster_path'] as String?;
       final reel = Reel(
         id: id,
         userId: local(r['user_id'] as String),
         caption: (r['caption'] as String?) ?? '',
-        video: MediaCache.peek(IntlyRepo.reelBucket, r['video_path'] as String),
+        video: MediaCache.peek(IntlyRepo.reelBucket, videoPath),
         audio: audioPath == null ? null : MediaCache.peek(IntlyRepo.reelBucket, audioPath),
         poster: posterPath == null ? null : MediaCache.peek(IntlyRepo.reelBucket, posterPath),
         audioName: (r['audio_name'] as String?) ?? 'Original audio',
@@ -949,15 +1080,18 @@ class AppState extends ChangeNotifier {
         hue: (r['hue'] as int?) ?? 0,
         icon: (r['icon_index'] as int?) ?? 0,
         minutes: _ageMinutes(r['created_at'] as String),
-        likes: _minus(r['like_count'], liked),
+        likes: _minus(r['like_count'], serverLiked),
         comments: (r['comment_count'] as int?) ?? 0,
-        reposts: _minus(r['repost_count'], reposted),
+        reposts: _minus(r['repost_count'], serverReposted),
         shares: (r['share_count'] as int?) ?? 0,
-        saves: _minus(r['save_count'], saved),
+        saves: _minus(r['save_count'], serverSaved),
       )
-        ..liked = liked
-        ..saved = saved
-        ..reposted = reposted;
+        ..liked = _pendingOr('rl:$id', serverLiked)
+        ..saved = _pendingOr('rs:$id', serverSaved)
+        ..reposted = _pendingOr('rr:$id', serverReposted)
+        ..videoPath = videoPath
+        ..audioPath = audioPath
+        ..posterPath = posterPath;
       reels.add(reel);
     }
 
@@ -965,13 +1099,13 @@ class AppState extends ChangeNotifier {
     drafts.clear();
     for (final d in s.rows('drafts')) {
       final videoPath = d['video_path'] as String;
-      final local0 = MediaCache.peek(IntlyRepo.reelBucket, videoPath);
-      if (local0 == null) continue;
+      final localVideo = MediaCache.peek(IntlyRepo.reelBucket, videoPath);
+      if (localVideo == null) continue;
       final audioPath = d['audio_path'] as String?;
       final posterPath = d['poster_path'] as String?;
       drafts.add(ReelDraft(
         id: d['id'] as String,
-        video: local0,
+        video: localVideo,
         caption: (d['caption'] as String?) ?? '',
         audioName: (d['audio_name'] as String?) ?? 'Original audio',
         speed: (d['playback_speed'] as num).toDouble(),
@@ -987,8 +1121,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Downloads photos first, then videos, one at a time, into the media cache.
-  /// Each finished file refreshes the screens.
+  /// Downloads in the background: photos and posters first, the first few reel
+  /// videos next, and the rest when they are scrolled to (see [ensureReel]).
   Future<void> _downloadMissing(RemoteSnapshot s) async {
     final light = <(String, String)>[];
     final heavy = <(String, String)>[];
@@ -1003,10 +1137,12 @@ class AppState extends ChangeNotifier {
         want(IntlyRepo.postBucket, m['poster_path'] as String?);
       }
     }
-    for (final r in s.rows('reels')) {
+    final reelRows = s.rows('reels');
+    for (var i = 0; i < reelRows.length; i++) {
+      final r = reelRows[i];
       want(IntlyRepo.reelBucket, r['poster_path'] as String?);
       want(IntlyRepo.reelBucket, r['audio_path'] as String?);
-      want(IntlyRepo.reelBucket, r['video_path'] as String, video: true);
+      if (i < 3) want(IntlyRepo.reelBucket, r['video_path'] as String, video: true);
     }
     for (final d in s.rows('drafts')) {
       want(IntlyRepo.reelBucket, d['poster_path'] as String?);
@@ -1020,7 +1156,7 @@ class AppState extends ChangeNotifier {
       if (!_downloading.add(key)) continue;
       try {
         await MediaCache.fetch(job.$1, job.$2);
-        _reapply();
+        _scheduleReapply();
       } catch (e) {
         debugPrint('Media download failed: $e');
       } finally {
@@ -1029,10 +1165,15 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _reapply() {
-    final s = _snap;
-    if (s == null) return;
-    _apply(s);
-    notifyListeners();
+  /// Rebuilds the screens from the last snapshot, at most a few times a second
+  /// while many files arrive (rebuilding for every file would be slow).
+  void _scheduleReapply() {
+    _reapplyTimer ??= Timer(const Duration(milliseconds: 350), () {
+      _reapplyTimer = null;
+      final s = _snap;
+      if (s == null) return;
+      _apply(s);
+      notifyListeners();
+    });
   }
 }
