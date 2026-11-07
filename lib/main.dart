@@ -1,7 +1,10 @@
 import 'dart:ui' show PlatformDispatcher;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'screens/shell.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'auth/auth_gate.dart';
+import 'auth/supabase_config.dart';
 import 'state.dart';
 import 'theme.dart';
 
@@ -9,6 +12,12 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  try {
+    await Supabase.initialize(url: SupabaseConfig.url, anonKey: SupabaseConfig.anonKey);
+    SupabaseConfig.ready = true;
+  } catch (e) {
+    debugPrint('Supabase start failed: $e');
+  }
   final state = AppState();
   await state.load();
   runApp(IntlyApp(state));
@@ -74,7 +83,7 @@ class _IntlyAppState extends State<IntlyApp> with WidgetsBindingObserver {
                   selectionColor: p.accent.withAlpha(80),
                 ),
               ),
-              home: const Shell(),
+              home: AuthGate(state: state),
             ),
           );
         },
@@ -82,4 +91,3 @@ class _IntlyAppState extends State<IntlyApp> with WidgetsBindingObserver {
     );
   }
 }
-

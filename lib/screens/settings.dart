@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../auth/auth_service.dart';
 import '../native.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -81,12 +82,57 @@ class SettingsScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _logout(BuildContext context) async {
+    final p = context.p;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => Dialog(
+        backgroundColor: p.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Log out of Intly?', style: ts(p.text, 20, FontWeight.w800)),
+            const SizedBox(height: 8),
+            Text('Your profile stays saved in your account. Log in again to sync it.',
+                style: ts(p.sub, 15, FontWeight.w400, 1.4)),
+            const SizedBox(height: 20),
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              Tap(
+                onTap: () => Navigator.pop(d, false),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Text('Cancel', style: ts(p.text, 15, FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Tap(
+                onTap: () => Navigator.pop(d, true),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  decoration: BoxDecoration(color: p.accent, borderRadius: BorderRadius.circular(18)),
+                  child: Text('Log out', style: ts(Colors.white, 15, FontWeight.w700)),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    await AuthService.signOut();
+    // The login screen takes over the app; close the settings pages above it.
+    if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = context.p;
     final s = context.s;
     Widget flag(IconData i, String t, String k, String sub) => _row(p, i, t,
-        sub: sub, trailing: Toggle(s.flags[k] ?? false, (v) => s.setFlag(k, v)), onTap: () => s.setFlag(k, !(s.flags[k] ?? false)));
+        sub: sub,
+        trailing: Toggle(s.flags[k] ?? false, (v) => s.setFlag(k, v)),
+        onTap: () => s.setFlag(k, !(s.flags[k] ?? false)));
     return Scaffold(
       backgroundColor: p.bg,
       body: Column(children: [
@@ -136,12 +182,14 @@ class SettingsScreen extends StatelessWidget {
             flag(LucideIcons.lock, 'Private account', 'private', 'New followers need your approval'),
             flag(LucideIcons.eye, 'Show activity', 'activity', 'Let others see when you are active'),
             _head(p, 'Account'),
+            _row(p, LucideIcons.mail, 'Signed in as', sub: AuthService.email ?? 'Not signed in'),
             _row(p, LucideIcons.user, 'Edit profile',
                 trailing: Icon(LucideIcons.chevronRight, size: 20, color: p.sub),
                 onTap: () => Navigator.of(context).push(slide(const EditProfileScreen()))),
+            _row(p, LucideIcons.logOut, 'Log out', danger: true, onTap: () => _logout(context)),
             _row(p, LucideIcons.trash2, 'Reset app data', danger: true, onTap: () => _confirm(context)),
             _head(p, 'About'),
-            _row(p, LucideIcons.info, 'Intly', sub: 'Version 1.0.0'),
+            _row(p, LucideIcons.info, 'Intly', sub: 'Version 1.2.0'),
             _row(p, LucideIcons.cpu, 'C++ core', sub: Native.ok ? 'Active (native)' : 'Fallback (Dart)'),
             const SizedBox(height: 40),
           ]),
@@ -150,4 +198,3 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 }
-

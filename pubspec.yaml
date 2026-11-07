@@ -1,7 +1,7 @@
 name: intly
-description: Intly - a simple, fast social app (Flutter + C++ + Python).
+description: Intly - a simple, fast social app (Flutter + C++ + Python + Supabase).
 publish_to: none
-version: 1.0.1+2
+version: 1.2.0+4
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  supabase_flutter: ^2.8.0
   lucide_icons_flutter: ^3.0.0
   photo_manager: ^3.6.0
   video_player: ^2.9.2
