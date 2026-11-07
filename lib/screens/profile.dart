@@ -8,6 +8,7 @@ import '../widgets.dart';
 import 'edit_profile.dart';
 import 'follow_list.dart';
 import 'reel_viewer.dart';
+import 'suggestions.dart';
 import 'settings.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -139,6 +140,7 @@ class _ProfileState extends State<ProfileScreen> {
                   ]),
                 ]),
               ),
+              if (me) const SuggestionsStrip(),
               const SizedBox(height: 14),
               Container(
                 decoration: BoxDecoration(border: Border(bottom: BorderSide(color: p.line))),

@@ -622,7 +622,8 @@ class _SheetRow extends StatelessWidget {
 /// A tap that answers the moment the finger lifts. Unlike [Tap] it does not wait
 /// for the gesture arena, so a screen that listens for double taps cannot delay
 /// it. Moving the finger more than a few pixels cancels it, so scrolling past a
-/// button never presses it.
+/// button never presses it. It also absorbs the tap, so a card or row around it
+/// (a post, a profile row) does not open at the same time.
 class InstantTap extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
@@ -640,33 +641,37 @@ class _InstantTapState extends State<InstantTap> {
   }
 
   @override
-  Widget build(BuildContext context) => Listener(
+  Widget build(BuildContext context) => GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onPointerDown: (e) {
-          _start = e.localPosition;
-          _set(true);
-        },
-        onPointerMove: (e) {
-          final s = _start;
-          if (s != null && (e.localPosition - s).distance > 12) {
+        onTap: () {}, // wins the tap against any parent, so the parent stays quiet
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (e) {
+            _start = e.localPosition;
+            _set(true);
+          },
+          onPointerMove: (e) {
+            final s = _start;
+            if (s != null && (e.localPosition - s).distance > 12) {
+              _start = null;
+              _set(false);
+            }
+          },
+          onPointerCancel: (_) {
             _start = null;
             _set(false);
-          }
-        },
-        onPointerCancel: (_) {
-          _start = null;
-          _set(false);
-        },
-        onPointerUp: (_) {
-          final s = _start;
-          _start = null;
-          _set(false);
-          if (s != null) widget.onTap?.call();
-        },
-        child: AnimatedScale(
-          scale: _down ? 0.93 : 1,
-          duration: const Duration(milliseconds: 90),
-          child: widget.child,
+          },
+          onPointerUp: (_) {
+            final s = _start;
+            _start = null;
+            _set(false);
+            if (s != null) widget.onTap?.call();
+          },
+          child: AnimatedScale(
+            scale: _down ? 0.93 : 1,
+            duration: const Duration(milliseconds: 90),
+            child: widget.child,
+          ),
         ),
       );
 }

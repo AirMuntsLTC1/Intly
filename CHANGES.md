@@ -1,3 +1,15 @@
+# Intly 1.3.5 — changes
+
+## 1.3.5
+- Your profile: a "Suggestions People" section under Posts, Reels, Followers and
+  Following. It shows up to 10 people, scrollable sideways, with photo, name,
+  mutual count and a Follow button.
+- "See all" opens a full-screen Discover people list. Mutuals come first, then
+  Suggested for you.
+- Fixed: a tap on a button inside a card or row (for example Follow on a post,
+  or the heart on a post) also opened that post or profile. Buttons now absorb
+  their own tap.
+
 # Intly 1.3.4 — changes
 
 ## 1.3.4
